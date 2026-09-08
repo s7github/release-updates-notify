@@ -1,8 +1,56 @@
-node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
-.env*
+# ---- Secrets: never commit ----
+google-services.json
+**/google-services.json
+*-service-account*.json
+serviceAccountKey.json
+.env
+.env.*
 !.env.example
+*.jks
+*.keystore
+keystore.properties
+
+# ---- Android / Gradle ----
+android/local.properties
+local.properties
+.gradle/
+**/build/
+!build-logic/
+!**/src/**/build/
+captures/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+lint-results*.html
+lint-results*.xml
+
+# ---- IDE ----
+.idea/
+!.idea/icon.png
+*.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+
+# ---- Node (web/, backend/, firebase/) ----
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+
+# ---- Firebase ----
+.firebase/
+firebase-debug.log
+firestore-debug.log
+pubsub-debug.log
+ui-debug.log
+
+# ---- Misc ----
+*.log
+coverage/
+.tmp/
