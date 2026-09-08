@@ -1,0 +1,13 @@
+{
+  "name": "UpdateNotify PWA",
+  "description": "A smart release discovery engine that filters software updates using Gemini AI to highlight features and security optimizations.",
+  "requestFramePermissions": [
+    "notifications"
+  ],
+  "majorCapabilities": [
+    "Full-stack software update tracking",
+    "Gemini-powered change extraction",
+    "PWA with offline support",
+    "Admin dashboard for registry management"
+  ]
+}

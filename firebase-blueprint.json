@@ -1,0 +1,130 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "fcmTokens": { "type": "array", "items": { "type": "string" } },
+        "settings": {
+          "type": "object",
+          "properties": {
+            "notifyFeatures": { "type": "boolean" },
+            "notifySecurity": { "type": "boolean" },
+            "notifyFixes": { "type": "boolean" },
+            "notifyOptimizations": { "type": "boolean" },
+            "darkMode": { "type": "boolean" }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "SoftwareRequest": {
+      "title": "Software Request",
+      "description": "User requested software to be tracked",
+      "type": "object",
+      "properties": {
+        "softwareName": { "type": "string" },
+        "websiteHint": { "type": "string" },
+        "userId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "adminComment": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["softwareName", "userId", "status"]
+    },
+    "MasterRegistry": {
+      "title": "Master Registry",
+      "description": "Information about tracked software sources",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "github_url": { "type": "string" },
+        "rss_url": { "type": "string" },
+        "changelog_url": { "type": "string" },
+        "package_registry_url": { "type": "string" },
+        "suggested_priority": { "type": "array", "items": { "type": "string" } },
+        "lastVersion": { "type": "string" },
+        "lastCheck": { "type": "string", "format": "date-time" },
+        "etag": { "type": "string" },
+        "active": { "type": "boolean" },
+        "category": { "type": "string" },
+        "historyMaxCount": { "type": "number" },
+        "historyMinDate": { "type": "string", "format": "date" }
+      },
+      "required": ["name", "slug"]
+    },
+    "ReleaseNote": {
+      "title": "Release Note",
+      "description": "Summarized software release information",
+      "type": "object",
+      "properties": {
+        "softwareId": { "type": "string" },
+        "softwareName": { "type": "string" },
+        "version": { "type": "string" },
+        "releaseDate": { "type": "string", "format": "date-time" },
+        "summary": { "type": "string" },
+        "bullets": { "type": "array", "items": { "type": "string" } },
+        "category": { "type": "string", "enum": ["Features", "Security", "Fixes", "Optimization"] },
+        "relevanceScore": { "type": "number" },
+        "rawContent": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["softwareId", "version"]
+    },
+    "Interest": {
+      "title": "Interest",
+      "description": "User interests (software or topics)",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "softwareId": { "type": "string" },
+        "topic": { "type": "string" },
+        "type": { "type": "string", "enum": ["software", "topic"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Authorized administrators",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "SystemLearning": {
+      "title": "System Learning",
+      "description": "Learned improvements and corrections",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["source_correction", "metadata_improvement", "pattern_recognition", "error_fix"] },
+        "softwareId": { "type": "string" },
+        "softwareName": { "type": "string" },
+        "description": { "type": "string" },
+        "previousValue": { "type": "string" },
+        "newValue": { "type": "string" },
+        "impact": { "type": "string" },
+        "confidence": { "type": "number" },
+        "applied": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "description", "impact", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": { "schema": "User", "description": "User profiles" },
+    "master_registry/{softwareId}": { "schema": "MasterRegistry", "description": "Software source registry" },
+    "release_notes/{noteId}": { "schema": "ReleaseNote", "description": "Extracted release notes" },
+    "interests/{interestId}": { "schema": "Interest", "description": "User library items" },
+    "admins/{adminId}": { "schema": "Admin", "description": "Administrators" },
+    "system_learnings/{learningId}": { "schema": "SystemLearning", "description": "System self-learning logs" }
+  }
+}

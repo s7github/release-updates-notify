@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 1. Helpers
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isAdmin() { 
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == "saurabh257@gmail.com"
+      ); 
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // 2. Collections
+
+    // Users: Profile sync
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'settings', 'fcmTokens']);
+    }
+
+    // Admins: Access control
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Master Registry: Catalog
+    match /master_registry/{softwareId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn(); // Users can trigger magic discovery
+      allow update, delete: if isAdmin();
+    }
+
+    // Release Notes: Extracted updates
+    match /release_notes/{noteId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn(); // Individual polling writes notes
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // User Subscriptions: Track specific package follows
+    match /user_subscriptions/{subId} {
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Interests: User's personalized library
+    match /interests/{interestId} {
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow get, delete, update: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isAdmin();
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+ 
+    // System Learnings: Self-correction logs
+    match /system_learnings/{learningId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+    }
+
+    // Background Tasks: Pipeline monitoring
+    match /background_tasks/{taskId} {
+      allow read: if isAdmin();
+      allow write: if isSignedIn(); // System can update, and user can create via client for now
+    }
+  }
+}
+
