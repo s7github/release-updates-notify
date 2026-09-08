@@ -4,9 +4,6 @@ plugins {
     alias(libs.plugins.updatenotify.android.room)
 }
 
-android {
-    namespace = "com.updatenotify.core.database"
-}
 
 dependencies {
     api(projects.core.model)

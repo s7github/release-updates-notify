@@ -86,7 +86,7 @@ class BackendApi @Inject constructor(
                     .build()
 
                 client.newCall(request).execute().use { response ->
-                    val text = response.body?.string().orEmpty()
+                    val text = response.body.string()
                     if (!response.isSuccessful) {
                         val detail = runCatching {
                             json.decodeFromString<ErrorResponse>(text)

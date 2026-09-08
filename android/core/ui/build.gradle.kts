@@ -3,9 +3,6 @@ plugins {
     alias(libs.plugins.updatenotify.android.library.compose)
 }
 
-android {
-    namespace = "com.updatenotify.core.ui"
-}
 
 dependencies {
     api(projects.core.model)

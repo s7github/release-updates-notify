@@ -21,6 +21,7 @@ and why matters most when you are about to change something.
 | [0007](0007-modularization-strategy.md) | Multi-module by feature, core underneath | Accepted |
 | [0008](0008-fcm-notification-fanout.md) | Push fan-out as its own pipeline stage | Accepted |
 | [0009](0009-keep-web-as-admin-surface.md) | Keep the React PWA as the operator surface | Accepted |
+| [0010](0010-agp9-toolchain-and-ksp-flags.md) | AGP 9 toolchain, and the two flags that make KSP work | Accepted |
 
 ## Writing one
 

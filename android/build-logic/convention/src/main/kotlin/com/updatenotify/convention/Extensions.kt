@@ -24,51 +24,37 @@ internal fun VersionCatalog.version(alias: String): String =
  * Applied through convention plugins rather than a root `subprojects {}` block:
  * `subprojects` breaks the configuration cache and hides which settings reach
  * which module. See ADR-0007.
+ *
+ * Written as property access rather than the `lint { }` / `packaging { }` block
+ * form: AGP 9 removed those lambda-accepting methods from `CommonExtension`
+ * (they survive only on the concrete `ApplicationExtension` / `LibraryExtension`),
+ * and `CommonExtension` itself is no longer generic.
  */
-internal fun Project.configureKotlinAndroid(
-    commonExtension: CommonExtension<*, *, *, *, *, *>,
-) {
-    commonExtension.apply {
-        compileSdk = libs.version("compileSdk").toInt()
+internal fun Project.configureKotlinAndroid(commonExtension: CommonExtension) {
+    commonExtension.compileSdk = libs.version("compileSdk").toInt()
+    commonExtension.defaultConfig.minSdk = libs.version("minSdk").toInt()
 
-        defaultConfig {
-            minSdk = libs.version("minSdk").toInt()
-        }
+    commonExtension.compileOptions.sourceCompatibility = JavaVersion.VERSION_17
+    commonExtension.compileOptions.targetCompatibility = JavaVersion.VERSION_17
 
-        compileOptions {
-            sourceCompatibility = JavaVersion.VERSION_17
-            targetCompatibility = JavaVersion.VERSION_17
-            // Allows java.time and other newer APIs on minSdk 26 devices.
-            isCoreLibraryDesugaringEnabled = false
-        }
+    commonExtension.lint.abortOnError = true
+    commonExtension.lint.checkDependencies = true
+    // Deliberately no baseline file. AGP generates one on first run containing
+    // every existing issue, after which lint can never fail again — a quality
+    // gate that silently disables itself is worse than no gate. Fix issues, or
+    // suppress them explicitly at the call site where the reason is visible.
 
-        lint {
-            warningsAsErrors = false
-            abortOnError = true
-            checkDependencies = true
-            // Baseline lets us adopt lint on an existing codebase without a
-            // flag-day cleanup. New issues still fail the build.
-            baseline = file("lint-baseline.xml")
-        }
+    commonExtension.packaging.resources.excludes.addAll(
+        setOf(
+            "/META-INF/{AL2.0,LGPL2.1}",
+            "/META-INF/LICENSE*",
+            "/META-INF/NOTICE*",
+            "META-INF/versions/9/previous-compilation-data.bin",
+        ),
+    )
 
-        packaging {
-            resources {
-                excludes += setOf(
-                    "/META-INF/{AL2.0,LGPL2.1}",
-                    "/META-INF/LICENSE*",
-                    "/META-INF/NOTICE*",
-                    "META-INF/versions/9/previous-compilation-data.bin",
-                )
-            }
-        }
-
-        testOptions {
-            unitTests {
-                isIncludeAndroidResources = true
-                isReturnDefaultValues = true
-            }
-        }
-    }
+    commonExtension.testOptions.unitTests.isIncludeAndroidResources = true
+    commonExtension.testOptions.unitTests.isReturnDefaultValues = true
 
     configureKotlinJvmTarget()
 }

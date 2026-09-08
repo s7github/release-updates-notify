@@ -5,14 +5,8 @@ import org.gradle.api.Project
 import org.gradle.kotlin.dsl.dependencies
 
 /** Compose setup shared by the app module and every Compose-bearing library. */
-internal fun Project.configureCompose(
-    commonExtension: CommonExtension<*, *, *, *, *, *>,
-) {
-    commonExtension.apply {
-        buildFeatures {
-            compose = true
-        }
-    }
+internal fun Project.configureCompose(commonExtension: CommonExtension) {
+    commonExtension.buildFeatures.compose = true
 
     // Kotlin 2.x ships the Compose compiler as a Kotlin plugin, so there is no
     // separate compiler version to keep in step with Kotlin any more.

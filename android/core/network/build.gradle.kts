@@ -5,8 +5,8 @@ plugins {
 }
 
 android {
-    namespace = "com.updatenotify.core.network"
-
+    // Namespace comes from the convention plugin; this block exists only for
+    // the API base URL, which is per-environment.
     defaultConfig {
         // Overridden per environment. See docs/SETUP.md.
         buildConfigField(

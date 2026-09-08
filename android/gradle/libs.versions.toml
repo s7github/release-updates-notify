@@ -8,14 +8,14 @@
 
 [versions]
 # --- Build toolchain ---
-agp = "8.13.2"
-kotlin = "2.2.21"
-ksp = "2.2.21-2.0.5"          # must track `kotlin` — the prefix is the Kotlin version
+agp = "9.4.0"
+kotlin = "2.3.21"
+ksp = "2.3.11"                # KSP moved to independent versioning after Kotlin 2.2.21
 googleServices = "4.5.0"
 
 # --- SDK levels (mirrored in the convention plugin) ---
-compileSdk = "36"
-targetSdk = "36"
+compileSdk = "37"
+targetSdk = "36"           # compile against 37, opt in to 36 runtime behaviour deliberately
 minSdk = "26"                 # 26 = notification channels. See ADR-0008.
 
 # --- AndroidX ---
@@ -31,7 +31,7 @@ work = "2.11.2"
 splashscreen = "1.0.1"
 
 # --- DI ---
-hilt = "2.57.2"           # 2.60+ requires AGP 9. Upgrade both together — tracked in docs/STATUS.md
+hilt = "2.60.1"
 hiltNavigationCompose = "1.4.0"
 hiltWork = "1.3.0"
 
@@ -42,7 +42,7 @@ firebaseBom = "34.18.0"
 coroutines = "1.11.0"
 
 javaxInject = "1"
-okhttp = "4.12.0"        # 5.x requires compileSdk 37, which AGP 8.x caps out below
+okhttp = "5.5.0"
 kotlinxSerialization = "1.11.0"
 
 # --- Media / misc ---

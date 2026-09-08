@@ -3,9 +3,6 @@ plugins {
     alias(libs.plugins.updatenotify.android.hilt)
 }
 
-android {
-    namespace = "com.updatenotify.core.testing"
-}
 
 dependencies {
     api(projects.core.model)

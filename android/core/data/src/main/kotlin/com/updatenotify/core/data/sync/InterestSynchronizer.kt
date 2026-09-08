@@ -35,7 +35,7 @@ class InterestSynchronizer @Inject constructor(
     private val firestore: FirestoreDataSource,
     private val interestDao: InterestDao,
     private val releaseRepository: ReleaseRepository,
-    @ApplicationScope private val scope: CoroutineScope,
+    @param:ApplicationScope private val scope: CoroutineScope,
 ) {
     private var started = false
 
