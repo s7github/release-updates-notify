@@ -41,6 +41,8 @@ firebaseBom = "34.18.0"
 # --- Async ---
 coroutines = "1.11.0"
 
+credentials = "1.6.0"
+googleId = "1.2.0"
 javaxInject = "1"
 okhttp = "5.5.0"
 kotlinxSerialization = "1.11.0"
@@ -116,6 +118,12 @@ hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", v
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
 androidx-hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "hiltWork" }
 androidx-hilt-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "hiltWork" }
+
+# --- Google Sign-In via Credential Manager (the current API; the legacy
+#     GoogleSignInClient is deprecated) ---
+androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
+androidx-credentials-play-services = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
+google-id = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleId" }
 
 # --- Firebase (versions come from the BOM) ---
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }

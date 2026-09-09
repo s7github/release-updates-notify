@@ -28,6 +28,22 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+
+        // Google Sign-In needs the **web** OAuth client id from the Firebase
+        // console, not the Android one — a detail that costs everybody an
+        // afternoon exactly once.
+        //
+        // Read from a Gradle property rather than google-services' generated
+        // `default_web_client_id` string, so the app still compiles when
+        // google-services.json is absent (fresh clone, CI). Empty means sign-in
+        // is disabled and the UI says so, rather than failing cryptically.
+        // Set updatenotify.googleWebClientId in ~/.gradle/gradle.properties or
+        // local.properties. See docs/SETUP.md.
+        buildConfigField(
+            "String",
+            "GOOGLE_WEB_CLIENT_ID",
+            "\"${project.findProperty("updatenotify.googleWebClientId") ?: ""}\"",
+        )
     }
 
     buildTypes {

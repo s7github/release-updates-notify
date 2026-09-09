@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors BrandOrange in core:designsystem. Duplicated because the manifest
+         and the splash theme are XML and cannot read Compose colours. -->
+    <color name="brand_orange">#F27D26</color>
+    <color name="surface_black">#050505</color>
+</resources>
