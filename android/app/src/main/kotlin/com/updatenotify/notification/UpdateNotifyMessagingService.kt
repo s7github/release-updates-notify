@@ -1,12 +1,9 @@
 package com.updatenotify.notification
 
-import android.Manifest
 import android.app.PendingIntent
 import android.content.Intent
-import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.updatenotify.MainActivity
@@ -54,13 +51,13 @@ class UpdateNotifyMessagingService : FirebaseMessagingService() {
         val category = ReleaseCategory.fromWireValue(data[KEY_CATEGORY])
         val summary = data[KEY_SUMMARY].orEmpty()
 
-        // POST_NOTIFICATIONS is a runtime permission on Android 13+. Without this
-        // check the notify() call is silently dropped.
-        val granted = ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.POST_NOTIFICATIONS,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (!granted) return
+        // Below Android 13 there is no runtime notification permission, and
+        // checkSelfPermission() on a permission the platform does not define reports
+        // DENIED — which would have silently dropped every notification on API 26-32,
+        // most of the supported range. areNotificationsEnabled() is correct on every
+        // version and additionally respects the user switching notifications off in
+        // system settings, which a permission check alone misses.
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
 
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -99,10 +96,23 @@ class UpdateNotifyMessagingService : FirebaseMessagingService() {
 
         // Keyed on softwareId so a later release for the same software replaces
         // the earlier notification instead of stacking.
-        NotificationManagerCompat.from(this).notify(softwareId.hashCode(), notification)
+        try {
+            NotificationManagerCompat.from(this).notify(softwareId.hashCode(), notification)
+        } catch (denied: SecurityException) {
+            // POST_NOTIFICATIONS can be revoked between the check above and this
+            // call. A dropped notification is the correct outcome; crashing the
+            // messaging service is not.
+            log("notification suppressed: permission revoked", denied)
+        }
+    }
+
+    private fun log(message: String, error: Throwable? = null) {
+        android.util.Log.w(TAG, message, error)
     }
 
     companion object {
+        private const val TAG = "UpdateNotifyFcm"
+
         const val EXTRA_SOFTWARE_ID = "extra_software_id"
 
         private const val KEY_SOFTWARE_ID = "softwareId"
