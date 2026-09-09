@@ -236,5 +236,15 @@ Things that are fine today and will need attention.
   Android dependencies by accident.
 - **Poll frequency and budget.** Nothing has been chosen, and it is the main
   driver of Gemini cost.
+- **Orphaned prior work exists outside this repo.** A local checkout was found
+  with an entirely separate history — root commit `04ae22d`, up to
+  `7d48c29 "Add Gemini AI web search for software history"` — none of which is on
+  GitHub; the repo was reinitialised at some point and stranded it. On top sat 11
+  uncommitted changes including a **271-line Python scraper**
+  (`scraper/main.py`, `utils.py`, `debug.py`), which overlaps directly with what
+  `backend/poller` now does. Preserved at
+  `C:\projectsepositorieselease-updates-notify-legacy`. Worth reading
+  before extending the poller — and worth deciding whether any of it should be
+  salvaged into this repo or deliberately abandoned.
 - **Play Store or internal distribution?** Determines whether release signing and
   a privacy policy are near-term work.
