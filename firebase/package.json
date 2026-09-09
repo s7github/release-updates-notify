@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Firestore security rules, indexes, and their tests.",
   "scripts": {
-    "test:rules": "firebase emulators:exec --only firestore --project updatenotify-test 'node --test test/*.test.js'",
+    "test:rules": "firebase emulators:exec --only firestore --project updatenotify-test \"node --test test/*.test.js\"",
     "deploy:rules": "firebase deploy --only firestore:rules",
     "deploy:indexes": "firebase deploy --only firestore:indexes",
     "emulators": "firebase emulators:start"
