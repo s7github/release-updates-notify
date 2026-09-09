@@ -1,0 +1,51 @@
+{
+  "//": "Firestore runs without these until a collection grows, then fails. Declared rather than discovered in production. See docs/DATA_MODEL.md section 9.",
+  "indexes": [
+    {
+      "//": "Library list: a person's follows, newest first.",
+      "collectionGroup": "interests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Version timeline for one software item.",
+      "collectionGroup": "release_notes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "softwareId", "order": "ASCENDING" },
+        { "fieldPath": "releaseDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Incremental client sync against the stored watermark.",
+      "collectionGroup": "release_notes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "softwareId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "A person watching their own enqueued pipeline jobs.",
+      "collectionGroup": "background_tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "requestedBy", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Scheduler picking which catalog entries are due for a poll.",
+      "collectionGroup": "master_registry",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "lastCheck", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -1,82 +1,263 @@
 rules_version = '2';
+
+// UpdateNotify Firestore security rules.
+//
+// Trust model, in one sentence: the client is READ-MOSTLY. It writes its own
+// profile document and its own interests, and nothing else. See ADR-0006.
+//
+// Everything the pipeline writes — master_registry, release_notes,
+// background_tasks, system_learnings — is written by the backend with the Admin
+// SDK, which bypasses these rules entirely. So denying the client write access
+// to those collections costs the pipeline nothing and closes the ability to
+// forge catalog entries and release notes, the latter being a notification-spam
+// vector aimed at the whole user base.
+//
+// Changing this file? Update firebase/test/firestore.rules.test.js in the same
+// commit. Untested security rules are guesses.
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 0. Default Deny
+
+    // ---------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Admin membership is document existence, not an email string.
+    //
+    // The inherited rules hardcoded an address here, which is a credential in a
+    // world-readable file and breaks the moment that address changes.
+    // Bootstrapping the first admin is a documented one-off operation — see
+    // docs/SECURITY.md.
+    function isAdmin() {
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function changedKeys() {
+      return incoming().diff(existing()).affectedKeys();
+    }
+
+    // Bounded string. The length cap answers the "Resource Exhaustion" and
+    // "Denial of Wallet" payloads in docs/security-spec-original.md — a field
+    // is a place to store a value, not a place to store a megabyte.
+    function isBoundedString(value, maxLen) {
+      return value is string && value.size() > 0 && value.size() <= maxLen;
+    }
+
+    function isNullOrBoundedString(value, maxLen) {
+      return value == null || (value is string && value.size() <= maxLen);
+    }
+
+    // Document ids appear in paths and in derived keys, so they are constrained
+    // to a safe alphabet and a sane length.
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 200 &&
+             id.matches('^[A-Za-z0-9_.~:@+-]+$');
+    }
+
+    // ---------------------------------------------------------------------
+    // users — a person's profile and notification preferences
+    // ---------------------------------------------------------------------
+
+    match /users/{userId} {
+
+      function isValidSettings(settings) {
+        return settings is map &&
+               settings.keys().hasOnly([
+                 'notifyFeatures', 'notifySecurity',
+                 'notifyFixes', 'notifyOptimizations'
+               ]) &&
+               (!('notifyFeatures' in settings) || settings.notifyFeatures is bool) &&
+               (!('notifySecurity' in settings) || settings.notifySecurity is bool) &&
+               (!('notifyFixes' in settings) || settings.notifyFixes is bool) &&
+               (!('notifyOptimizations' in settings) || settings.notifyOptimizations is bool);
+      }
+
+      allow get: if isOwner(userId) || isAdmin();
+
+      // No listing users. Otherwise any signed-in account can enumerate every
+      // address in the system — the "PII Leak" payload.
+      allow list: if isAdmin();
+
+      allow create: if isOwner(userId)
+                    && incoming().uid == userId
+                    && isBoundedString(incoming().email, 256)
+                    && isNullOrBoundedString(incoming().get('displayName', null), 256)
+                    && isNullOrBoundedString(incoming().get('photoURL', null), 2048)
+                    // Exactly the fields a client may create. An unlisted field —
+                    // `role: 'admin'`, or any shadow field — fails the write
+                    // rather than being quietly stored.
+                    && incoming().keys().hasOnly([
+                         'uid', 'email', 'displayName', 'photoURL',
+                         'createdAt', 'settings', 'fcmTokens'
+                       ])
+                    && (!('settings' in incoming()) || isValidSettings(incoming().settings));
+
+      // The allow-list on the diff is the important half: it closes privilege
+      // escalation and shadow-field injection in one clause, because a client
+      // simply cannot touch any other key.
+      allow update: if isOwner(userId)
+                    && changedKeys().hasOnly([
+                         'displayName', 'photoURL', 'settings', 'fcmTokens'
+                       ])
+                    && (!('settings' in changedKeys()) || isValidSettings(incoming().settings))
+                    && (!('fcmTokens' in changedKeys()) ||
+                        (incoming().fcmTokens is list && incoming().fcmTokens.size() <= 20))
+                    && isNullOrBoundedString(incoming().get('displayName', null), 256)
+                    && isNullOrBoundedString(incoming().get('photoURL', null), 2048);
+
+      // Account deletion is a backend operation: it has to clean up interests
+      // and tokens too, which a single client delete cannot do atomically.
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // interests — what a person follows
+    // ---------------------------------------------------------------------
+
+    match /interests/{interestId} {
+
+      function isValidInterest(data) {
+        return data.userId == request.auth.uid
+               && data.type in ['software', 'topic']
+               && isBoundedString(data.softwareName, 300)
+               && data.following is bool
+               // Exactly one of softwareId / topic, matching type. The schema
+               // invariant from docs/DATA_MODEL.md, enforced rather than assumed.
+               && (
+                    (data.type == 'software'
+                      && isValidId(data.get('softwareId', ''))
+                      && data.get('topic', null) == null)
+                    ||
+                    (data.type == 'topic'
+                      && isBoundedString(data.get('topic', ''), 200)
+                      && data.get('softwareId', null) == null)
+                  )
+               && data.keys().hasOnly([
+                    'userId', 'softwareId', 'topic', 'softwareName',
+                    'type', 'following', 'createdAt'
+                  ]);
+      }
+
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+
+      // Scoped list. The query must filter on the caller's own userId; a client
+      // asking for everyone's interests is rejected rather than served.
+      //
+      // Deliberately no `request.query.limit` cap: that field is null when the
+      // client sets no limit, and `null <= 500` is an evaluation error, not a
+      // false — so the clause would deny every ordinary library query. The
+      // ownership constraint is the real control here, and the collection is
+      // per-user and naturally small.
+      allow list: if isAdmin() ||
+                  (isSignedIn() && resource.data.userId == request.auth.uid);
+
+      allow create: if isSignedIn() && isValidInterest(incoming());
+
+      // The owner cannot be reassigned, which blocks the cross-tenant write.
+      allow update: if isSignedIn()
+                    && existing().userId == request.auth.uid
+                    && incoming().userId == request.auth.uid
+                    && isValidInterest(incoming());
+
+      allow delete: if isSignedIn() &&
+                    (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // ---------------------------------------------------------------------
+    // master_registry — the shared catalog
+    // ---------------------------------------------------------------------
+
+    match /master_registry/{softwareId} {
+      allow get, list: if isSignedIn();
+
+      // No client writes. The inherited rules allowed any signed-in user to
+      // create entries so the browser could run "magic discovery"; the client no
+      // longer discovers anything (ADR-0003), so this is now pure attack
+      // surface. Discovery goes through the authenticated backend API.
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // release_notes — the pipeline's output
+    // ---------------------------------------------------------------------
+
+    match /release_notes/{noteId} {
+      allow get, list: if isSignedIn();
+
+      // No client writes. Previously any signed-in user could author a release
+      // note, and the notifier fans notes out to every subscriber — so this was
+      // a push-spam vector pointed at the entire user base.
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // background_tasks — pipeline job progress
+    // ---------------------------------------------------------------------
+
+    match /background_tasks/{taskId} {
+      // A person may watch the jobs they asked for.
+      allow get: if isAdmin() ||
+                 (isSignedIn() && existing().get('requestedBy', '') == request.auth.uid);
+
+      allow list: if isAdmin() ||
+                  (isSignedIn() && resource.data.requestedBy == request.auth.uid);
+
+      // Tasks are created and advanced by the backend. The inherited rule here
+      // was commented "user can create via client for now"; that is no longer
+      // true, and letting a client write progress means letting it lie.
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // system_learnings — the pipeline's self-correction audit log
+    // ---------------------------------------------------------------------
+
+    match /system_learnings/{learningId} {
+      allow get, list: if isAdmin();
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // admins — role membership
+    // ---------------------------------------------------------------------
+
+    match /admins/{adminId} {
+      // Readable so a client can resolve its own role. The documents hold no
+      // secret; membership itself is the fact.
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
+
+      // Granting admin is an Admin SDK operation, never a client write —
+      // otherwise the check is decorative.
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // Default deny — last, and absolute.
+    //
+    // Anything not matched above is denied. Collections added later get no
+    // access until someone writes a rule and a test for them.
+    // ---------------------------------------------------------------------
+
     match /{document=**} {
       allow read, write: if false;
     }
-
-    // 1. Helpers
-    function isSignedIn() { return request.auth != null; }
-    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
-    function isAdmin() { 
-      return isSignedIn() && (
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        request.auth.token.email == "saurabh257@gmail.com"
-      ); 
-    }
-    function incoming() { return request.resource.data; }
-    function existing() { return resource.data; }
-
-    // 2. Collections
-
-    // Users: Profile sync
-    match /users/{userId} {
-      allow get: if isOwner(userId) || isAdmin();
-      allow list: if isAdmin();
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) && 
-                      incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'settings', 'fcmTokens']);
-    }
-
-    // Admins: Access control
-    match /admins/{adminId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    // Master Registry: Catalog
-    match /master_registry/{softwareId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn(); // Users can trigger magic discovery
-      allow update, delete: if isAdmin();
-    }
-
-    // Release Notes: Extracted updates
-    match /release_notes/{noteId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn(); // Individual polling writes notes
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
-    }
-
-    // User Subscriptions: Track specific package follows
-    match /user_subscriptions/{subId} {
-      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
-      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
-      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-    }
-
-    // Interests: User's personalized library
-    match /interests/{interestId} {
-      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
-      allow get, delete, update: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
-      allow list: if isAdmin();
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-    }
- 
-    // System Learnings: Self-correction logs
-    match /system_learnings/{learningId} {
-      allow read: if isAdmin();
-      allow create: if isSignedIn();
-    }
-
-    // Background Tasks: Pipeline monitoring
-    match /background_tasks/{taskId} {
-      allow read: if isAdmin();
-      allow write: if isSignedIn(); // System can update, and user can create via client for now
-    }
   }
 }
-
