@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { config } from '../lib/config.js';
+import { parseToIso } from '../lib/dates.js';
 import { log } from '../lib/logging.js';
 import { isProbablyDateNotVersion } from '../lib/version.js';
 import {
@@ -240,6 +241,7 @@ export function sanitizeRelease(raw: Partial<ExtractedRelease>): ExtractedReleas
 
 function normalizeDate(value: unknown): string | null {
   if (typeof value !== 'string' || !value.trim()) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  // The prompt asks for ISO YYYY-MM-DD, but the model returns other formats often
+  // enough to matter, and non-ISO forms parse as local midnight. See lib/dates.ts.
+  return parseToIso(value);
 }

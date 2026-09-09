@@ -47,7 +47,10 @@ describe('sanitizeRelease', () => {
     assert.equal(result.category, 'Feature Updates');
   });
 
-  it('normalises a parseable date to ISO', () => {
+  it('normalises a parseable date to ISO, anchored to UTC', () => {
+    // Must hold in every timezone. `new Date('March 9, 2026')` is local
+    // midnight, so a naive toISOString() yields 2026-03-08 anywhere east of
+    // UTC — the calendar day silently shifts. See lib/dates.ts.
     const result = sanitizeRelease({
       version: '1.0',
       category: 'Bug Fixes',
@@ -55,7 +58,18 @@ describe('sanitizeRelease', () => {
       isGenuineUpdate: true,
       releaseDate: 'March 9, 2026',
     });
-    assert.ok(result.releaseDate?.startsWith('2026-03-09'));
+    assert.equal(result.releaseDate, '2026-03-09T00:00:00.000Z');
+  });
+
+  it('preserves an explicit instant rather than flattening it to a date', () => {
+    const result = sanitizeRelease({
+      version: '1.0',
+      category: 'Bug Fixes',
+      summary: 'x',
+      isGenuineUpdate: true,
+      releaseDate: '2026-03-09T14:30:00Z',
+    });
+    assert.equal(result.releaseDate, '2026-03-09T14:30:00.000Z');
   });
 
   it('nulls an unparseable date instead of inventing one', () => {

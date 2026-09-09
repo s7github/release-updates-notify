@@ -62,12 +62,19 @@ describe('githubApiUrl', () => {
 });
 
 describe('parseLooseDate', () => {
+  // These assert exact UTC instants rather than a date prefix, so they fail in
+  // every timezone if the UTC anchoring regresses. A prefix check passes on a
+  // UTC machine (CI, containers) and hides the bug from everyone else.
   it('parses the year-first form vendors use', () => {
-    assert.ok(parseLooseDate('2026 / March / 09').startsWith('2026-03-09'));
+    assert.equal(parseLooseDate('2026 / March / 09'), '2026-03-09T00:00:00.000Z');
   });
 
   it('parses an ordinary date', () => {
-    assert.ok(parseLooseDate('March 9, 2026').startsWith('2026-03-09'));
+    assert.equal(parseLooseDate('March 9, 2026'), '2026-03-09T00:00:00.000Z');
+  });
+
+  it('parses a slash-separated numeric date', () => {
+    assert.equal(parseLooseDate('2026/03/09'), '2026-03-09T00:00:00.000Z');
   });
 
   it('falls back to now rather than throwing on junk', () => {

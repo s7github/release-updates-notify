@@ -3,6 +3,7 @@ import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 import Parser from 'rss-parser';
 import { config } from '../lib/config.js';
+import { parseToIso } from '../lib/dates.js';
 import { log } from '../lib/logging.js';
 import type { Software } from '../lib/types.js';
 
@@ -212,8 +213,8 @@ export function parseLooseDate(raw: string): string {
     ? `${yearFirst[2]} ${yearFirst[3]} ${yearFirst[1]}`
     : cleaned;
 
-  const parsed = new Date(candidate);
-  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+  // Date-only values are anchored to UTC midnight; see lib/dates.ts for why.
+  return parseToIso(candidate) ?? new Date().toISOString();
 }
 
 /**
