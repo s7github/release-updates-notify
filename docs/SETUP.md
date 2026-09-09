@@ -46,10 +46,29 @@ everyone exactly once.
 If the SDK is not on `ANDROID_HOME`, create `android/local.properties`:
 
 ```properties
+# macOS / Linux
 sdk.dir=/absolute/path/to/Android/sdk
+
+# Windows — forward slashes, NOT backslashes
+sdk.dir=C:/Users/you/AppData/Local/Android/Sdk
 ```
 
 It is gitignored, and machine-local by design.
+
+> **Windows: use forward slashes.** `local.properties` is a Java `.properties`
+> file, where **backslash is an escape character**. A pasted Windows path like
+> `C:\Users\you\AppData\Local\Android\Sdk` is read as `\U`, `\A`, `\L`… and
+> silently mangles into a path that does not exist. The build then fails with a
+> stack trace whose actual cause is buried dozens of frames down:
+>
+> ```
+> java.io.IOException: Invalid file path
+>   at SdkLocator$SdkLocationSource.validateSdkPath(SdkLocator.kt:216)
+> ```
+>
+> Forward slashes work on every platform and avoid the escaping entirely.
+> (Escaped backslashes — `C:\Users\you\...` — also work, which is what
+> Android Studio writes, but they are easy to get wrong by hand.)
 
 ### Verify
 
@@ -187,6 +206,7 @@ in-app path to self-promote, by design — see [`SECURITY.md`](SECURITY.md).
 | Symptom | Cause |
 |---|---|
 | `Failed to find package 'platforms;android-37'` | Platforms are minor-versioned; use `android-37.0` |
+| `java.io.IOException: Invalid file path` from `SdkLocator` | `local.properties` has unescaped Windows backslashes — use forward slashes (§2) |
 | `KSP is not compatible with AGP's built-in Kotlin` | `android.builtInKotlin=false` is missing from `gradle.properties` — it is load-bearing (ADR-0010) |
 | `plugin is not compatible with AGP's 9.0 new DSL` | `android.newDsl=false` is missing; also load-bearing |
 | Sign-in fails immediately | Wrong OAuth client id (must be the **Web** one), or the debug SHA-1 is not registered |
