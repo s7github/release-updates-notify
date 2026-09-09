@@ -1,7 +1,7 @@
 # Project Status
 
 **Last updated:** 2026-09-09
-**Updated by:** the native Android conversion session
+**Updated by:** the native Android conversion session, then a Windows verification run
 
 > **If you are an agent or a person picking this up cold, this is the file that
 > tells you where things actually stand.** Read it before planning anything, and
@@ -40,12 +40,35 @@ Everything here was actually run, not assumed.
 | Build is warning-free | No warnings from project sources. One unavoidable AGP notice about the Kotlin plugin remains — see ADR-0010 |
 | Firestore rules pass | 31 cases against the emulator, 0 failures — 12 deny (the "Dirty Dozen"), 8 further deny, 11 allow |
 | Toolchain resolves | AGP 9.4.0, Gradle 9.7.1, Kotlin 2.3.21, KSP 2.3.11, Hilt 2.60.1 |
-| Backend typechecks and tests | `npm run lint` clean; 38 tests, 0 failures |
+| Backend typechecks and tests | `npm run lint` clean; 40 tests, 0 failures |
 | Backend builds and boots | `npm run build` → `dist/index.js`; all three services answer `/healthz`; an unknown `SERVICE` exits 1 |
+| **Verified on Windows too** | Windows 11, JDK 21 (Studio JBR), Node 25, Europe/Amsterdam. Android: APK + 34 tests + lint clean. Backend: lint + 40 tests + build. Rules: 31 tests. All green. |
 
 **Not verified:** the app has never been run on a device or emulator. It compiles
 and its logic is unit-tested; whether the screens actually render correctly is
 unknown. Nothing has been deployed anywhere.
+
+### What the Windows run found
+
+Everything below was green on Linux and broken on Windows. Worth knowing that
+CI (Ubuntu, UTC) cannot catch this class of problem on its own.
+
+| Problem | Fix |
+|---|---|
+| Date-only values parsed as **local** midnight, so a March 9 changelog entry stored as March 8 anywhere east of UTC. The Kotlin client already did this correctly, so the two implementations disagreed. | `backend/src/lib/dates.ts`; both parse sites use it; tests assert exact UTC instants |
+| `npm run test:rules` could not run at all — single quotes are not argument grouping in `cmd.exe`, so `--test` leaked into `firebase`'s own argv | double quotes in `firebase/package.json` |
+| `lintDebug` could not pass while `local.properties` exists — `PropertyEscape` is unsatisfiable on Windows | check disabled in the convention plugin, with the reasoning inline |
+| `local.properties` with pasted Windows backslashes mangles into an invalid path (backslash is a `.properties` escape) | documented in `SETUP.md` §2 |
+
+### Lint warnings worth attention (14 total, none blocking)
+
+Two are real and worth fixing; the rest are dependency-version notices.
+
+- `CredentialManagerMisuse` — `AuthViewModel.kt:58` calls `getCredential` without
+  handling `NoCredentialException`. That is the "no Google account on device"
+  path, which currently falls into the generic error branch.
+- `ObsoleteSdkInt` — `mipmap-anydpi-v26` is redundant now that `minSdk` is 26;
+  the folder can be merged into `mipmap-anydpi`.
 
 ---
 
@@ -129,6 +152,9 @@ Android app shows an empty dashboard**, because nothing is writing
 
 - [ ] Never run on a device or emulator. **Do this first** — it is cheap and will
       find real problems.
+- [ ] `AuthViewModel` does not handle `NoCredentialException` (lint
+      `CredentialManagerMisuse`) — the no-account-on-device path
+- [ ] `mipmap-anydpi-v26` is redundant at `minSdk` 26 (lint `ObsoleteSdkInt`)
 - [ ] No instrumented or Compose UI tests
 - [ ] `TaskRepositoryImpl.observeActiveTasks()` returns an empty flow; needs the
       `requestedBy` index query wired up

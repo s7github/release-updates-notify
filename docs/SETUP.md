@@ -182,7 +182,17 @@ is retained as an internal operator tool ([ADR-0009](adr/0009-keep-web-as-admin-
 
 ## 6. Backend
 
-Not built yet. See [`STATUS.md`](STATUS.md) §4.
+```bash
+cd backend
+npm ci
+npm run lint     # typechecks src and test
+npm test         # 40 tests; no network, emulator or credentials needed
+npm run build    # -> dist/index.js
+```
+
+Written and tested, **never deployed**. `backend/README.md` has the service
+layout, the configuration table, and the deployment sketch; what is still
+missing is infrastructure, not code — see [`STATUS.md`](STATUS.md) §4.
 
 ---
 
