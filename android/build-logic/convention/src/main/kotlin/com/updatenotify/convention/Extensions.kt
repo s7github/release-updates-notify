@@ -39,6 +39,16 @@ internal fun Project.configureKotlinAndroid(commonExtension: CommonExtension) {
 
     commonExtension.lint.abortOnError = true
     commonExtension.lint.checkDependencies = true
+
+    // PropertyEscape fires on local.properties, which is gitignored, machine-local,
+    // and not project source. On Windows any SDK path contains a drive-letter colon,
+    // and the check is unsatisfiable there: with the file set to exactly what lint
+    // itself suggests (`C\:/Users/...`) it still reports the same error and the same
+    // "fix". Left enabled it makes `./gradlew lintDebug` — the command CLAUDE.md tells
+    // people to run — fail for every Windows developer, while passing on Linux only
+    // because a POSIX SDK path happens to contain neither a colon nor a backslash.
+    // Nothing shipped depends on how this file is formatted.
+    commonExtension.lint.disable.add("PropertyEscape")
     // Deliberately no baseline file. AGP generates one on first run containing
     // every existing issue, after which lint can never fail again — a quality
     // gate that silently disables itself is worse than no gate. Fix issues, or
