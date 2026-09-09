@@ -243,7 +243,7 @@ Things that are fine today and will need attention.
   uncommitted changes including a **271-line Python scraper**
   (`scraper/main.py`, `utils.py`, `debug.py`), which overlaps directly with what
   `backend/poller` now does. Preserved at
-  `C:\projectsepositorieselease-updates-notify-legacy`. Worth reading
+  `C:/projects/repositories/release-updates-notify-legacy`. Worth reading
   before extending the poller — and worth deciding whether any of it should be
   salvaged into this repo or deliberately abandoned.
 - **Play Store or internal distribution?** Determines whether release signing and
