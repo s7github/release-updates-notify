@@ -1,0 +1,77 @@
+name: Android
+
+# Path-filtered: an Android change should not run the backend suite, and vice
+# versa. This is the monorepo tax from ADR-0001, paid here.
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', 'gradle/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', 'gradle/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Match the toolchain in ADR-0010. CI drifting from local is how "works on my
+  # machine" happens.
+  JAVA_VERSION: '17'
+
+jobs:
+  build:
+    name: Build, lint and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # Only the default branch writes the cache, so a PR cannot poison it.
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+          build-scan-publish: false
+
+      - name: Assemble debug
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Unit tests
+        working-directory: android
+        run: ./gradlew testDebugUnitTest test --no-daemon --stacktrace
+
+      - name: Lint
+        working-directory: android
+        run: ./gradlew lintDebug --no-daemon --stacktrace
+
+      # Uploaded on failure only — a green run's reports are noise, a red run's
+      # are the first thing you want.
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: |
+            android/**/build/reports/tests/
+            android/**/build/reports/lint-results-*.html
+          retention-days: 7
+
+      - name: Upload debug APK
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14

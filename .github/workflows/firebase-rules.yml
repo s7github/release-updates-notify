@@ -1,0 +1,45 @@
+name: Firestore rules
+
+# Security rules are the only thing standing between a signed-in user and every
+# other user's data, so they get their own gate. See ADR-0006.
+on:
+  push:
+    branches: [main]
+    paths: ['firebase/**', '.github/workflows/firebase-rules.yml']
+  pull_request:
+    paths: ['firebase/**', '.github/workflows/firebase-rules.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: rules-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Rules test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: firebase/package-lock.json
+
+      # The Firestore emulator is a Java process, not a Node one.
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install
+        working-directory: firebase
+        run: npm ci
+
+      - name: Run rules tests
+        working-directory: firebase
+        run: npm run test:rules
