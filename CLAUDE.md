@@ -129,14 +129,14 @@ chore(ci): pin build-tools to 36.0.0
 ## 6. Verify before you push
 
 ```bash
-# Android — from repo root
-cd android && ./gradlew assembleDebug lintDebug testDebugUnitTest
+# Android
+cd android && ./gradlew assembleDebug lintDebug testDebugUnitTest test
 
 # Backend
-cd backend && npm ci && npm run lint && npm test
+cd backend && npm ci && npm run lint && npm test && npm run build
 
-# Firestore rules
-cd firebase && npm run test:rules
+# Firestore rules (starts the emulator)
+cd firebase && npm ci && npm run test:rules
 ```
 
 CI runs the same commands in `.github/workflows/`. Local green and CI red means
@@ -159,7 +159,11 @@ your machine is lying to you — trust CI.
 
 ## 8. Current state, honestly
 
-This is a conversion in progress, not a finished app. `docs/STATUS.md` is the
-authoritative answer and is kept current. As of the last update, the Android
-client scaffolding and data layer exist; the backend pipeline is scaffolded but
-not deployed. Do not assume a feature works because a screen for it exists.
+This is a conversion in progress, not a shipped app. `docs/STATUS.md` is the
+authoritative answer and is kept current.
+
+As of the last update: the Android client, the backend pipeline and the Firestore
+rules all exist and are verified to build and pass their tests. **None of it has
+been deployed, and the app has never been run on a device.** Do not assume a
+feature works because a screen for it exists, or that a service works because it
+compiles.

@@ -15,13 +15,16 @@
 
 ## 1. One-paragraph summary
 
-The React PWA has been restructured into a monorepo and a **native Android
-client has been built and verified to compile, lint and test clean, producing a
-real debug APK.** The Firestore security rules have been rewritten and are
-covered by a passing 31-case test suite. **The backend pipeline does not exist
-yet** — it is fully specified in `ARCHITECTURE.md` and the ADRs, and nothing has
-been written. Until it does, the app has no data to show and cannot notify
-anyone.
+The React PWA has been restructured into a monorepo, and three things now exist
+and are verified: a **native Android client** that compiles, lints and tests
+clean into a real debug APK; **hardened Firestore rules** with a passing 31-case
+test suite; and a **backend pipeline** (poller, notifier, api) that typechecks,
+passes 38 tests, builds and boots.
+
+**Nothing has been deployed, and the app has never run on a device.** The
+pipeline needs a Google Cloud project, a secret, Pub/Sub topics and a scheduler
+before any of it is real — all infrastructure, no remaining code. Until then the
+dashboard is empty, because nothing is writing `release_notes`.
 
 ---
 
@@ -37,6 +40,8 @@ Everything here was actually run, not assumed.
 | Build is warning-free | No warnings from project sources. One unavoidable AGP notice about the Kotlin plugin remains — see ADR-0010 |
 | Firestore rules pass | 31 cases against the emulator, 0 failures — 12 deny (the "Dirty Dozen"), 8 further deny, 11 allow |
 | Toolchain resolves | AGP 9.4.0, Gradle 9.7.1, Kotlin 2.3.21, KSP 2.3.11, Hilt 2.60.1 |
+| Backend typechecks and tests | `npm run lint` clean; 38 tests, 0 failures |
+| Backend builds and boots | `npm run build` → `dist/index.js`; all three services answer `/healthz`; an unknown `SERVICE` exits 1 |
 
 **Not verified:** the app has never been run on a device or emulator. It compiles
 and its logic is unit-tested; whether the screens actually render correctly is
@@ -52,7 +57,7 @@ unknown. Nothing has been deployed anywhere.
 - [x] `ARCHITECTURE.md` — target system, module graph, pipeline, known weaknesses
 - [x] `DATA_MODEL.md` — normative schema for all nine Firestore collections
 - [x] ADRs 0001–0010, append-only, each with rejected alternatives and costs
-- [x] CI: three path-filtered workflows (Android, Firestore rules, web)
+- [x] CI: four path-filtered workflows (Android, backend, Firestore rules, web)
 
 ### Android client
 - [x] 15-module graph with convention plugins; features cannot depend on features
@@ -73,29 +78,52 @@ unknown. Nothing has been deployed anywhere.
 - [x] Five composite indexes declared, including the fan-out `softwareId` index
 - [x] Emulator config and a rules test suite wired into CI
 
+### Backend
+- [x] Three Cloud Run services from one image, selected by `SERVICE`
+- [x] Source aggregation ported from `web/server.ts`, extraction prompts ported
+      verbatim from `web/src/services/gemini.ts` — they are tuned, and rewriting
+      them would regress quality invisibly
+- [x] The genuine-update gate, which the web app had no need for and which is the
+      single most important check in the pipeline
+- [x] Model output re-validated before it is trusted (dates rejected as versions,
+      off-list categories defaulted, unparseable dates nulled rather than invented)
+- [x] Server-side notification preference filtering, FCM batching, dead-token pruning
+- [x] Firestore-backed per-user rate limits, because discovery spends money
+- [x] Pub/Sub OIDC verification, structured Cloud Logging, graceful SIGTERM draining
+
 ---
 
 ## 4. Not done — and what it blocks
 
-### The backend pipeline — **the critical path**
+### The backend pipeline — **written, never deployed**
 
-`backend/` is empty. Nothing in it exists. This blocks the entire product:
+All three services exist, typecheck, pass 38 tests, build, and boot. **None has
+ever run against a real Google Cloud project**, so treat the whole thing as
+unproven in production.
+
+Written:
+- `poller` — source aggregation, Gemini extraction, the genuine-update gate,
+  self-correcting metadata, history backfill, scheduler sweep
+- `notifier` — subscriber resolution, server-side preference filtering, FCM
+  multicast in 500s, dead-token pruning
+- `api` — authenticated discovery and refresh, both enqueue-only, with
+  Firestore-backed per-user hourly quotas
+- Dockerfile (one image, three services), structured Cloud Logging, graceful
+  SIGTERM draining
+
+Still missing, and all of it is infrastructure rather than code:
 
 | Missing | Blocks |
 |---|---|
-| `poller` Cloud Run service | Any release data existing at all |
-| `notifier` Cloud Run service | Every notification — i.e. the product |
-| `api` Cloud Run service | Search discovery and the refresh button; both currently fail |
-| Cloud Scheduler + Pub/Sub topics | Anything happening without a human pressing a button |
-| Secret Manager entry for the Gemini key | The poller running |
+| A Google Cloud project with billing | Everything below |
+| Secret Manager entry for the Gemini key | The poller and api running |
+| Pub/Sub topics, push subscriptions, dead-letter queues | The pipeline connecting |
+| Cloud Scheduler job | Anything happening unattended |
+| A first deploy | Any of it being real |
 
-The logic to port is not hypothetical — it exists in `web/server.ts` (the
-scraping proxy) and `web/src/services/pollService.ts` and `gemini.ts` (source
-priority, extraction prompts, self-correction). The prompts in particular are
-tuned and should be moved across as-is, not rewritten.
-
-**Until this exists the Android app shows an empty dashboard**, because there is
-nothing writing `release_notes`.
+`backend/README.md` has the deployment sketch. **Until it is deployed the
+Android app shows an empty dashboard**, because nothing is writing
+`release_notes`.
 
 ### Android gaps
 
@@ -112,6 +140,18 @@ nothing writing `release_notes`.
 - [ ] No crash reporting or analytics
 - [ ] No widget, no Wear surface, no deep-link intent filter beyond the
       notification extra
+
+### Backend gaps
+
+- [ ] Never deployed; never run against a real project
+- [ ] No integration tests against the Firestore emulator — the pure logic is
+      covered, the Firestore and Pub/Sub interactions are not
+- [ ] `rate_limits` documents need a Firestore TTL policy on `expiresAt`, or they
+      accumulate one per user per bucket per hour forever
+- [ ] No cheap change detection (ETag or content hash) before spending a Gemini
+      call, so an unchanged page still costs an extraction
+- [ ] No dead-source detection: a source that yields nothing repeatedly fails
+      silently rather than being flagged
 
 ### Data migration
 
@@ -143,14 +183,15 @@ Things that are fine today and will need attention.
 
 1. **Run the app on an emulator.** Cheapest possible way to find real problems.
    Requires `google-services.json` — see `SETUP.md`.
-2. **Build the `poller` service.** Port `web/server.ts` and `pollService.ts`.
-   Nothing downstream matters until release data exists.
-3. **Build the `notifier`** with the genuine-update gate. This is the product.
-4. **Build the `api` service** for discovery and refresh, which the app already
-   calls and which currently fails.
-5. Wire Cloud Scheduler and the Pub/Sub topics; deploy.
-6. De-duplicate existing `interests` documents.
-7. Then the Android polish list in §4.
+2. **Deploy the backend.** The code is written and tested; what is missing is a
+   project, a secret, topics and a scheduler. `backend/README.md` §Deployment.
+   Nothing else matters until release data exists.
+3. **Exercise the whole loop once by hand** — discover a piece of software, poll
+   it, confirm a release document appears, confirm a push arrives. Every
+   integration bug in this system lives in that path, and none of the unit tests
+   can see it.
+4. De-duplicate existing `interests` documents.
+5. Then the Android polish list in §4.
 
 ---
 

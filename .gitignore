@@ -54,3 +54,6 @@ ui-debug.log
 *.log
 coverage/
 .tmp/
+
+# Backend build output
+backend/dist/

@@ -57,12 +57,16 @@ Sign-in and real data need Firebase configuration — see
 
 ## Current state, honestly
 
-The Android client **builds, lints and tests clean** and produces a real debug
-APK. Firestore rules are rewritten and covered by a passing test suite.
+The Android client, the backend pipeline and the Firestore rules all exist and
+are verified: the app builds, lints and tests clean into a real debug APK; the
+backend typechecks, passes its tests, builds and boots; the rules pass a 31-case
+suite.
 
-**The backend pipeline does not exist yet.** Until it does, the app has nothing
-to display and cannot notify anyone. [`docs/STATUS.md`](docs/STATUS.md) is the
-authoritative, current, and deliberately honest answer.
+**Nothing has been deployed, and the app has never run on a device.** The
+pipeline needs a Google Cloud project, a secret, Pub/Sub topics and a scheduler —
+infrastructure, not code. Until then the dashboard is empty.
+[`docs/STATUS.md`](docs/STATUS.md) is the authoritative and deliberately honest
+answer.
 
 ---
 
@@ -82,8 +86,8 @@ of that lives server-side. See
 **Android** — Kotlin 2.3, Jetpack Compose, Material 3, Hilt, Room, Coroutines,
 AGP 9 / Gradle 9, `minSdk` 26 / `targetSdk` 36 / `compileSdk` 37, 15 modules.
 
-**Backend** (planned) — Cloud Run, Pub/Sub, Cloud Scheduler, Gemini, Firebase
-Admin SDK.
+**Backend** — Node 22, TypeScript, Express 5, Cloud Run, Pub/Sub, Cloud
+Scheduler, Gemini, Firebase Admin SDK.
 
 **Firebase** — Auth (Google), Firestore, Cloud Messaging.
 
