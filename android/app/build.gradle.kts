@@ -19,7 +19,10 @@ if (hasGoogleServices) {
     )
 }
 
-android {
+// Configured through the AGP 9 api DSL type rather than the `android { }`
+// accessor: with android.newDsl=false (see ADR-0010) that accessor resolves
+// to the deprecated legacy extension.
+extensions.configure<com.android.build.api.dsl.ApplicationExtension> {
     namespace = "com.updatenotify"
 
     defaultConfig {

@@ -57,6 +57,22 @@ internal fun Project.configureKotlinAndroid(commonExtension: CommonExtension) {
     commonExtension.testOptions.unitTests.isReturnDefaultValues = true
 
     configureKotlinJvmTarget()
+    allowModulesWithoutTests()
+}
+
+/**
+ * Gradle 9 fails a test task when a test source directory exists but contains no
+ * tests. Every module here has `src/test/kotlin` as the agreed place for tests to
+ * go, so a module that has not grown any yet would break the whole build — which
+ * discourages exactly the thing we want (adding the directory before the test).
+ *
+ * A module with tests still fails normally when they fail.
+ */
+internal fun Project.allowModulesWithoutTests() {
+    tasks.withType(org.gradle.api.tasks.testing.Test::class.java).configureEach {
+        // A Gradle Property, so set() rather than assignment in a plain .kt file.
+        failOnNoDiscoveredTests.set(false)
+    }
 }
 
 /** Kotlin compiler settings shared by Android and pure-JVM modules alike. */
@@ -86,4 +102,6 @@ internal fun Project.configureKotlinJvmTarget() {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    allowModulesWithoutTests()
 }
