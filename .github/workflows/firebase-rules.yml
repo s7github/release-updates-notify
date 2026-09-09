@@ -23,11 +23,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: firebase/package-lock.json
+          cache: pnpm
+          cache-dependency-path: firebase/pnpm-lock.yaml
 
       # The Firestore emulator is a Java process, not a Node one.
       - name: Set up JDK
@@ -38,8 +43,8 @@ jobs:
 
       - name: Install
         working-directory: firebase
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run rules tests
         working-directory: firebase
-        run: npm run test:rules
+        run: pnpm run test:rules

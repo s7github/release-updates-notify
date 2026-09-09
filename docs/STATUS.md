@@ -40,9 +40,10 @@ Everything here was actually run, not assumed.
 | Build is warning-free | No warnings from project sources. One unavoidable AGP notice about the Kotlin plugin remains — see ADR-0010 |
 | Firestore rules pass | 31 cases against the emulator, 0 failures — 12 deny (the "Dirty Dozen"), 8 further deny, 11 allow |
 | Toolchain resolves | AGP 9.4.0, Gradle 9.7.1, Kotlin 2.3.21, KSP 2.3.11, Hilt 2.60.1 |
-| Backend typechecks and tests | `npm run lint` clean; 40 tests, 0 failures |
-| Backend builds and boots | `npm run build` → `dist/index.js`; all three services answer `/healthz`; an unknown `SERVICE` exits 1 |
-| **Verified on Windows too** | Windows 11, JDK 21 (Studio JBR), Node 25, Europe/Amsterdam. Android: APK + 34 tests + lint clean. Backend: lint + 40 tests + build. Rules: 31 tests. All green. |
+| Backend typechecks and tests | `pnpm run lint` clean; 40 tests, 0 failures |
+| Backend builds and boots | `pnpm run build` → `dist/index.js`; all three services answer `/healthz`; an unknown `SERVICE` exits 1 |
+| **Verified on Windows too** | Windows 11, JDK 21 (Studio JBR), Node 25, Europe/Amsterdam. Android: APK + 34 tests + lint clean (0 errors). Backend: lint + 40 tests + build. Rules: 31 tests. All green. |
+| One-command verification | `.\verify.ps1` runs all three suites, sets `JAVA_HOME`/`ANDROID_HOME`, exits non-zero on failure |
 
 **Not verified:** the app has never been run on a device or emulator. It compiles
 and its logic is unit-tested; whether the screens actually render correctly is
@@ -56,19 +57,26 @@ CI (Ubuntu, UTC) cannot catch this class of problem on its own.
 | Problem | Fix |
 |---|---|
 | Date-only values parsed as **local** midnight, so a March 9 changelog entry stored as March 8 anywhere east of UTC. The Kotlin client already did this correctly, so the two implementations disagreed. | `backend/src/lib/dates.ts`; both parse sites use it; tests assert exact UTC instants |
-| `npm run test:rules` could not run at all — single quotes are not argument grouping in `cmd.exe`, so `--test` leaked into `firebase`'s own argv | double quotes in `firebase/package.json` |
+| `pnpm run test:rules` could not run at all — single quotes are not argument grouping in `cmd.exe`, so `--test` leaked into `firebase`'s own argv | double quotes in `firebase/package.json` |
 | `lintDebug` could not pass while `local.properties` exists — `PropertyEscape` is unsatisfiable on Windows | check disabled in the convention plugin, with the reasoning inline |
 | `local.properties` with pasted Windows backslashes mangles into an invalid path (backslash is a `.properties` escape) | documented in `SETUP.md` §2 |
+| **Phantom dependency**: `scraper.ts` imported `domhandler` without declaring it, working only via npm's flat hoisting. Surfaced the moment pnpm's strict linking was applied. | declared and pinned to match cheerio (ADR-0011) |
 
-### Lint warnings worth attention (14 total, none blocking)
+### Lint findings — fixed
 
-Two are real and worth fixing; the rest are dependency-version notices.
+Down from 14 warnings to 11, and every remaining one is a dependency-version
+notice (`NewerVersionAvailable`, `GradleDependency`) or the deliberate
+`targetSdk 36` (`OldTargetApi`, see ADR-0010). **Nothing actionable remains in
+the code.**
 
-- `CredentialManagerMisuse` — `AuthViewModel.kt:58` calls `getCredential` without
-  handling `NoCredentialException`. That is the "no Google account on device"
-  path, which currently falls into the generic error branch.
-- `ObsoleteSdkInt` — `mipmap-anydpi-v26` is redundant now that `minSdk` is 26;
-  the folder can be merged into `mipmap-anydpi`.
+One of these turned out to be a real bug rather than a style nit:
+
+| Was | Fixed |
+|---|---|
+| `InlinedApi` on `POST_NOTIFICATIONS` — **`checkSelfPermission()` returns DENIED for a permission the platform does not define, so every notification was silently dropped on API 26–32**, most of the supported range | `NotificationManagerCompat.areNotificationsEnabled()`, correct on all versions and also respects notifications being switched off in settings |
+| `CredentialManagerMisuse` — `NoCredentialException` unhandled | Sign-in now distinguishes no-account, user-dismissed (no error shown at all), and provider failure; also stops `runCatching` swallowing coroutine cancellation, and checks the credential type before reading it |
+| `MissingPermission` on `notify()` (surfaced by the fix above) | `SecurityException` handled — permission can be revoked between check and call |
+| `ObsoleteSdkInt` — `mipmap-anydpi-v26` redundant at `minSdk` 26 | merged into `mipmap-anydpi` |
 
 ---
 
@@ -152,9 +160,6 @@ Android app shows an empty dashboard**, because nothing is writing
 
 - [ ] Never run on a device or emulator. **Do this first** — it is cheap and will
       find real problems.
-- [ ] `AuthViewModel` does not handle `NoCredentialException` (lint
-      `CredentialManagerMisuse`) — the no-account-on-device path
-- [ ] `mipmap-anydpi-v26` is redundant at `minSdk` 26 (lint `ObsoleteSdkInt`)
 - [ ] No instrumented or Compose UI tests
 - [ ] `TaskRepositoryImpl.observeActiveTasks()` returns an empty flow; needs the
       `requestedBy` index query wired up

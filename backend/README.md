@@ -36,12 +36,12 @@ Cloud Scheduler ─► poller /scheduler/sweep ─► Pub/Sub poll-requests ─�
 ## Local development
 
 ```bash
-npm ci
-npm run lint     # typechecks src and test
-npm test         # 38 tests, no network or emulator needed
-npm run build
+pnpm install
+pnpm run lint     # typechecks src and test
+pnpm test         # 40 tests, no network or emulator needed
+pnpm run build
 
-SERVICE=api npm start
+SERVICE=api pnpm start
 ```
 
 The pure functions — version comparison, source priority, HTML scraping, model
@@ -51,7 +51,7 @@ deliberate: they hold the logic that is actually easy to get wrong.
 For anything touching Firestore, start the emulators from `firebase/`:
 
 ```bash
-cd ../firebase && npm run emulators
+cd ../firebase && pnpm run emulators
 export FIRESTORE_EMULATOR_HOST=localhost:8080
 ```
 

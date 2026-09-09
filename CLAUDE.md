@@ -133,10 +133,10 @@ chore(ci): pin build-tools to 36.0.0
 cd android && ./gradlew assembleDebug lintDebug testDebugUnitTest test
 
 # Backend
-cd backend && npm ci && npm run lint && npm test && npm run build
+cd backend && pnpm install && pnpm run lint && pnpm test && pnpm run build
 
 # Firestore rules (starts the emulator)
-cd firebase && npm ci && npm run test:rules
+cd firebase && pnpm install && pnpm run test:rules
 ```
 
 CI runs the same commands in `.github/workflows/`. Local green and CI red means

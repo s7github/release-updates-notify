@@ -66,8 +66,8 @@ and pushes a notification on a genuine new release.
 
 ```bash
 cd android && ./gradlew assembleDebug lintDebug testDebugUnitTest
-cd backend && npm ci && npm run lint && npm test
-cd firebase && npm run test:rules
+cd backend && pnpm install && pnpm run lint && pnpm test
+cd firebase && pnpm run test:rules
 ```
 
 Commits use Conventional Commits with an area scope: `feat(android):`,

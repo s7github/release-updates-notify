@@ -47,7 +47,7 @@ cd android && ./gradlew assembleDebug
 cd android && ./gradlew assembleDebug lintDebug testDebugUnitTest test
 
 # Firestore security rules (starts the emulator, runs 31 cases)
-cd firebase && npm ci && npm run test:rules
+cd firebase && pnpm install && pnpm run test:rules
 ```
 
 Sign-in and real data need Firebase configuration — see

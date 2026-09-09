@@ -3,12 +3,16 @@
 FROM node:22-slim AS build
 
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci
+# Corepack ships with Node and pins pnpm from package.json's packageManager
+# field, so the image uses the same version as CI and developers.
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build
+RUN pnpm run build
 
 FROM node:22-slim AS runtime
 
@@ -21,8 +25,11 @@ RUN apt-get update \
 ENV NODE_ENV=production
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml ./
+# --prod skips devDependencies; the compiled output in dist/ needs none of them.
+RUN pnpm install --frozen-lockfile --prod && pnpm store prune
 
 COPY --from=build /app/dist ./dist
 

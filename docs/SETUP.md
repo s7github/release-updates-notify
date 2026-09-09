@@ -72,14 +72,41 @@ It is gitignored, and machine-local by design.
 
 ### Verify
 
-```bash
-cd android
-./gradlew assembleDebug lintDebug testDebugUnitTest test
+**One command for everything** — the same checks CI runs:
+
+```powershell
+.\verify.ps1                    # Android + backend + Firestore rules
+.\verify.ps1 -Only android      # just one
+.\verify.ps1 -Only backend,rules
 ```
 
-All four should pass with no warnings from project sources. One AGP notice about
-the Kotlin plugin is expected and unavoidable — see
+It sets `JAVA_HOME` to Android Studio's bundled JDK and `ANDROID_HOME` to the
+default SDK location, which is the fiddly part on Windows. Exits non-zero if
+anything fails, so it works in a pre-push hook.
+
+Or run the suites by hand:
+
+```bash
+cd android   && ./gradlew assembleDebug lintDebug testDebugUnitTest test
+cd backend   && pnpm install && pnpm run lint && pnpm test && pnpm run build
+cd firebase  && pnpm install && pnpm run test:rules
+```
+
+Expect: an APK, **34** Android tests, **40** backend tests, **31** rules tests,
+and no warnings from project sources. One AGP notice about the Kotlin plugin is
+expected and unavoidable — see
 [ADR-0010](adr/0010-agp9-toolchain-and-ksp-flags.md).
+
+> **Put the repo on an SSD.** `node_modules` and Gradle output are tens of
+> thousands of small files, which is the worst case for a spinning disk. Measured
+> on this project: `pnpm install` took **8 seconds** on an NVMe SSD and had not
+> finished after **25 minutes** on a 7200rpm HDD. The Gradle and npm caches live
+> under your user profile, so if that is already on an SSD only the working copy
+> needs moving.
+
+> **Use a JDK the toolchain supports.** `verify.ps1` picks Android Studio's
+> bundled JDK deliberately. A newer JDK than AGP supports fails in ways that do
+> not mention the JDK.
 
 ---
 
@@ -146,9 +173,9 @@ fail without it; everything else works.
 
 ```bash
 cd firebase
-npm ci
-npm run test:rules     # starts the emulator, runs the suite, shuts it down
-npm run emulators      # long-running, with the UI on :4000
+pnpm install
+pnpm run test:rules     # starts the emulator, runs the suite, shuts it down
+pnpm run emulators      # long-running, with the UI on :4000
 ```
 
 The emulator is a Java process, so JDK 17+ is needed here too.
@@ -156,8 +183,8 @@ The emulator is a Java process, so JDK 17+ is needed here too.
 Deploying:
 
 ```bash
-npm run deploy:rules
-npm run deploy:indexes
+pnpm run deploy:rules
+pnpm run deploy:indexes
 ```
 
 > Deploy the **indexes before the rules** on a new project. Rules referencing a
@@ -169,8 +196,8 @@ npm run deploy:indexes
 
 ```bash
 cd web
-npm ci
-npm run dev      # http://localhost:3000
+pnpm install
+pnpm run dev      # http://localhost:3000
 ```
 
 Needs `GEMINI_API_KEY` in `web/.env` for its client-side AI calls. **That
@@ -184,10 +211,10 @@ is retained as an internal operator tool ([ADR-0009](adr/0009-keep-web-as-admin-
 
 ```bash
 cd backend
-npm ci
-npm run lint     # typechecks src and test
-npm test         # 40 tests; no network, emulator or credentials needed
-npm run build    # -> dist/index.js
+pnpm install
+pnpm run lint     # typechecks src and test
+pnpm test         # 40 tests; no network, emulator or credentials needed
+pnpm run build    # -> dist/index.js
 ```
 
 Written and tested, **never deployed**. `backend/README.md` has the service
