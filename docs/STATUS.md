@@ -319,6 +319,14 @@ cat docs/STATUS.md | grep -c "Current Status"
 - `backend` (project `release-update-backend`, container build): the deploy failed on `pnpm install --frozen-lockfile` because `backend/pnpm-lock.yaml` lacked `@sentry/node` / `@sentry/types`. Lockfile regenerated.
 - Open: Vercel SSO protection is on for both projects (visitors hit a login wall); `GEMINI_API_KEY` is baked into the web bundle (violates the server-side-AI rule); `/api/proxy` is an open proxy; untracked `backend/src/test/sentry.test.ts` has a stray Python docstring and breaks `tsc`. ADR-0003 targets Cloud Run, not Vercel, for the backend.
 
+## 1.8. Real-time data on Vercel (2026-10-27)
+
+- The Vercel dashboard is real-time in transport (Firestore `onSnapshot` on `release_notes`), but nothing writes `release_notes` on a schedule, so it only shows what a browser-triggered poll once wrote. Client writes are denied by the repo's rules, so that path is dead too. `release-updates-notify-brain` is research markdown only, not release data.
+- Chosen fix: deploy the backend poller to Cloud Run per ADR-0003. Added `backend/scripts/deploy-gcp.ps1` (APIs, service account, secret, topics, image, three services, OIDC push subscriptions, hourly scheduler sweep) and a launcher for it. **Not yet run** — needs a GCP project with billing and the Gemini key.
+- Fixed `backend/src/test/sentry.test.ts` (Python docstring broke `tsc`; assertions targeted non-mocks). Backend lint clean, 40 tests pass.
+- Open, owner action: Vercel Deployment Protection (SSO) on project `release-updates` must be turned off for Production, and the Vercel domain added to Firebase Auth authorized domains. Not done by an agent: both are security settings.
+- Open: after the first sweep, confirm `release_notes` fills and the dashboard updates live; the deployed Firestore rules must match `firebase/firestore.rules`.
+
 ## 2. Verified working
 
 Everything here was actually run, not assumed.
