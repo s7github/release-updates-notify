@@ -194,10 +194,11 @@ This is the single biggest gap against "data is live and real-time".
 
 ### Admin/API follow-ups
 
-- [ ] Deploy `backend` and `web`, in that order, then re-run the admin smoke test
-      against the live host.
-- [ ] Deploy the new `firestore.rules` and `firestore.indexes.json` (the
-      `admin_audit` rule and index are new).
+- [x] `backend` and `web` deployed to Vercel from `main` (2026-10-27); re-run the
+      admin smoke test against the live host.
+- [x] `firestore.rules` and `firestore.indexes.json` deployed to
+      `gen-lang-client-0040242541`. `admin_audit` needs no composite index
+      (single-field ordering is automatic).
 - [ ] Add a TTL policy on `admin_audit.createdAt` if the log is expected to grow
       indefinitely.
 - [ ] Add HTTP-level integration tests for `/v1/admin/*`; the manual smoke test

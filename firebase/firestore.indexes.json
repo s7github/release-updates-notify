@@ -47,14 +47,6 @@
       ]
     },
     {
-      "//": "Admin console: who changed what, newest first.",
-      "collectionGroup": "admin_audit",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
       "//": "History-scrape progress for one product.",
       "collectionGroup": "background_tasks",
       "queryScope": "COLLECTION",
