@@ -1,10 +1,10 @@
-"""
+/**
 Sentry error logging integration for UpdateNotify.
 
 This module provides robust error tracking and monitoring for the UpdateNotify platform.
 It integrates with Sentry to capture, categorize, and monitor errors across the entire
 application stack.
-"""
+ */
 
 import * as Sentry from '@sentry/node';
 import { config } from './config.js';
