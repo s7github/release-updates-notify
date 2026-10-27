@@ -105,7 +105,7 @@ service cloud.firestore {
                     // rather than being quietly stored.
                     && incoming().keys().hasOnly([
                          'uid', 'email', 'displayName', 'photoURL',
-                         'createdAt', 'settings', 'fcmTokens'
+                         'createdAt', 'settings', 'fcmTokens', 'subscriptionTier'
                        ])
                     && (!('settings' in incoming()) || isValidSettings(incoming().settings));
 
@@ -121,6 +121,17 @@ service cloud.firestore {
                         (incoming().fcmTokens is list && incoming().fcmTokens.size() <= 20))
                     && isNullOrBoundedString(incoming().get('displayName', null), 256)
                     && isNullOrBoundedString(incoming().get('photoURL', null), 2048);
+
+      // Subscription tier can only be set by the backend (Admin SDK)
+      allow update: if isOwner(userId) && isValidSubscriptionTier(incoming().get('subscriptionTier', existing().subscriptionTier)) && changedKeys().hasOnly(['subscriptionTier']) && !('subscriptionTier' in changedKeys());
+
+      // Prevent client from updating subscriptionTier
+      allow update: if isOwner(userId) && changedKeys().hasOnly(['subscriptionTier']);
+
+      // New validation function
+      function isValidSubscriptionTier(tier) {
+        return tier is string && tier in ['FREE', 'PRO', 'ENTERPRISE'];
+      }
 
       // Account deletion is a backend operation: it has to clean up interests
       // and tokens too, which a single client delete cannot do atomically.

@@ -2,7 +2,7 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "User profile and settings",
+      "description": "User profile and settings with subscription information",
       "type": "object",
       "properties": {
         "uid": { "type": "string" },
@@ -20,9 +20,19 @@
             "darkMode": { "type": "boolean" }
           }
         },
+        "subscriptionTier": {
+          "type": "string",
+          "enum": ["FREE", "PRO", "ENTERPRISE"],
+          "description": "User subscription tier"
+        },
+        "subscriptionExpiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Subscription expiration timestamp (null for free tier)"
+        },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["uid", "email"]
+      "required": ["uid", "email", "subscriptionTier"]
     },
     "SoftwareRequest": {
       "title": "Software Request",
@@ -120,7 +130,7 @@
     }
   },
   "firestore": {
-    "users/{userId}": { "schema": "User", "description": "User profiles" },
+    "users/{userId}": { "schema": "User", "description": "User profiles with subscription information" },
     "master_registry/{softwareId}": { "schema": "MasterRegistry", "description": "Software source registry" },
     "release_notes/{noteId}": { "schema": "ReleaseNote", "description": "Extracted release notes" },
     "interests/{interestId}": { "schema": "Interest", "description": "User library items" },

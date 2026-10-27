@@ -32,6 +32,8 @@ One document per account, keyed by Firebase Auth UID.
 | `createdAt` | ISO string | | Set once on first sign-in |
 | `settings` | map | ✓ | See below |
 | `fcmTokens` | string[] | ✓ | Device push tokens. Client appends; `notifier` prunes dead ones |
+| `subscriptionTier` | string | ✓ | User's subscription tier: FREE, PRO, ENTERPRISE |
+| `subscriptionExpiresAt` | ISO string? |  | Subscription expiration timestamp (null for free tier) |
 
 ### `settings`
 

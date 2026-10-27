@@ -84,7 +84,10 @@ fun LandingScreen(
 
             Text(
                 text = "Track the software you care about. We read the changelogs, " +
-                    "filter the noise, and tell you only when something real ships.",
+                    "filter the noise, and tell you only when something real ships.\\n\\n" +
+                    "Free users: Track up to 5 software items. Get notified when they ship.\\n" +
+                    "Pro users: Track unlimited software. Get detailed release notes.\\n" +
+                    "Enterprise users: Full access with admin dashboard.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

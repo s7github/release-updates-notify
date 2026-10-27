@@ -30,7 +30,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.updatenotify.core.designsystem.component.MessageState
 import com.updatenotify.core.designsystem.theme.style
 import com.updatenotify.core.model.ReleaseCategory
+import com.updatenotify.core.model.SubscriptionTier
 import com.updatenotify.core.ui.ReleaseCard
+import com.updatenotify.feature.dashboard.DashboardViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,6 +44,8 @@ fun DashboardScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val mainViewModel: com.updatenotify.MainViewModel = hiltViewModel()
+    val currentUser by mainViewModel.authRepository.currentUser.collectAsStateWithLifecycle()
 
     LaunchedEffect(state.errorMessage) {
         state.errorMessage?.let {
@@ -63,21 +67,28 @@ fun DashboardScreen(
                 .padding(padding),
         ) {
             if (state.isEmpty) {
+                val subscriptionTier = currentUser?.subscriptionTier ?: SubscriptionTier.FREE
                 MessageState(
                     icon = Icons.Filled.Inbox,
-                    title = if (state.activeFilters.isEmpty()) {
-                        "Nothing here yet"
-                    } else {
-                        "Nothing matches those filters"
+                    title = when (subscriptionTier) {
+                        SubscriptionTier.FREE -> "Welcome to UpdateNotify!"
+                        SubscriptionTier.PRO -> "You're on Pro! Get more features."
+                        SubscriptionTier.ENTERPRISE -> "Enterprise plan activated!"
                     },
-                    body = if (state.activeFilters.isEmpty()) {
-                        "Follow some software and releases will show up here as " +
-                            "they ship."
-                    } else {
-                        "Try clearing a filter to see more."
+                    body = when (subscriptionTier) {
+                        SubscriptionTier.FREE -> "Follow 3-5 software updates to get started. Free users see:\n" +
+                            "• 3 tracked software updates per day\n" +
+                            "• Basic notifications for major releases\n" +
+                            "• Access to all categories\n\n" +
+                            "Pro users get:\n" +
+                            "• Unlimited tracking\n" +
+                            "• Advanced notifications\n" +
+                            "• Priority support"
+                        SubscriptionTier.PRO -> "You have Pro! Track unlimited software, get detailed release notes, and receive priority notifications for major releases."
+                        SubscriptionTier.ENTERPRISE -> "Enterprise plan activated. You have access to all features including admin dashboard and custom integrations."
                     },
                     actionLabel = if (state.activeFilters.isEmpty()) {
-                        "Find software"
+                        "Browse Software"
                     } else {
                         "Clear filters"
                     },

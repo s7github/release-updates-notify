@@ -1,5 +1,10 @@
 package com.updatenotify.core.model
 
+/** Subscription tier levels for the UpdateNotify service. */
+enum class SubscriptionTier {
+    FREE, PRO, ENTERPRISE
+}
+
 /** The signed-in account and its notification preferences. */
 data class User(
     val uid: String,
@@ -8,6 +13,8 @@ data class User(
     val photoUrl: String?,
     val settings: NotificationSettings,
     val isAdmin: Boolean = false,
+    val subscriptionTier: SubscriptionTier = SubscriptionTier.FREE,
+    val subscriptionExpiresAt: Long? = null, // null for free tier
 )
 
 /**
