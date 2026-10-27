@@ -6,6 +6,7 @@ import RegistryManager from "../components/Admin/RegistryManager";
 import UserInsights from "../components/Admin/UserInsights";
 import LearningInsights from "../components/Admin/LearningInsights";
 import ProcessingInsights from "../components/Admin/ProcessingInsights";
+import AuditLog from "../components/Admin/AuditLog";
 
 export default function Admin() {
   const [loading, setLoading] = useState(true);
@@ -33,9 +34,10 @@ export default function Admin() {
           allowScrollButtonsMobile
         >
           <Tab label="Master Registry" sx={{ fontWeight: 700 }} />
-          <Tab label="User Insights" sx={{ fontWeight: 700 }} />
+          <Tab label="Users & Plans" sx={{ fontWeight: 700 }} />
           <Tab label="Self-Learning" sx={{ fontWeight: 700 }} />
           <Tab label="Processing Insights" sx={{ fontWeight: 700 }} />
+          <Tab label="Audit Log" sx={{ fontWeight: 700 }} />
         </Tabs>
       </Box>
 
@@ -43,6 +45,7 @@ export default function Admin() {
       {tab === 1 && <UserInsights />}
       {tab === 2 && <LearningInsights />}
       {tab === 3 && <ProcessingInsights />}
+      {tab === 4 && <AuditLog />}
     </Container>
   );
 }

@@ -6,7 +6,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Markdown from "react-markdown";
 import { useAuth } from "../../App";
 import { db } from "../../services/firebase";
-import { collection, query, where, getDocs, addDoc, deleteDoc, doc, getDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import toast from "react-hot-toast";
 
 const categoryIcons: Record<string, any> = {

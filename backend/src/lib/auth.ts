@@ -15,6 +15,7 @@ declare global {
   namespace Express {
     interface Request {
       uid?: string;
+      authEmail?: string;
       isAdmin?: boolean;
     }
   }
@@ -36,6 +37,7 @@ export async function requireAuth(
   try {
     const decoded = await auth().verifyIdToken(token);
     req.uid = decoded.uid;
+    req.authEmail = typeof decoded.email === 'string' ? decoded.email : undefined;
     next();
   } catch (error) {
     // Deliberately vague to the caller: distinguishing "expired" from "forged"

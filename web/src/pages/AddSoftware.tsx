@@ -1,29 +1,52 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { 
   Container, Typography, Box, TextField, 
-  Paper, Avatar, IconButton, CircularProgress, Button, Grid
+  Paper, Avatar, IconButton, CircularProgress, Button, Grid, Chip, Alert
 } from "@mui/material";
-import { collection, query, where, getDocs, setDoc, addDoc, doc, limit } from "firebase/firestore";
-import { Search as SearchIcon, ArrowLeft, Plus, Globe, ExternalLink } from "lucide-react";
+import { collection, query, where, getDocs, doc, getDoc, setDoc, limit, onSnapshot } from "firebase/firestore";
+import { Search as SearchIcon, ArrowLeft, Plus, Globe, ExternalLink, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../App";
 import { db } from "../services/firebase";
-import { discoverSources } from "../services/gemini";
-import { pollSoftware, pollSoftwareHistory } from "../services/pollService";
+import { limitsFor, tierLabel } from "../services/entitlements";
+import { userApi, ApiError } from "../services/api";
 import toast from "react-hot-toast";
 import { motion } from "motion/react";
 
-import { createTask } from "../services/taskService";
+interface SearchItem {
+  id: string;
+  name: string;
+  vendor?: string | null;
+  website?: string | null;
+  icon_url?: string | null;
+  type?: "software" | "topic";
+  isNew?: boolean;
+}
 
 export default function AddSoftware() {
-  const { user } = useAuth();
+  const { user, tier, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [val, setVal] = useState("");
   const [isSearching, setIsSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isDiscovering, setIsDiscovering] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
+  const [trackedCount, setTrackedCount] = useState(0);
 
+  const limits = limitsFor(tier);
+  const atLimit = !isAdmin && limits.maxTrackedItems !== null && trackedCount >= limits.maxTrackedItems;
+
+  useEffect(() => {
+    if (!user) return;
+    return onSnapshot(
+      query(collection(db, "interests"), where("userId", "==", user.uid)),
+      (snap) => setTrackedCount(snap.size),
+      () => setTrackedCount(0),
+    );
+  }, [user]);
+
+  /** Catalog search is local filtering over a bounded registry query. */
   const handleSearch = async (queryVal: string) => {
-    if (!queryVal || !user) return;
+    if (!queryVal.trim() || !user) return;
     setIsSearching(true);
     setSearchResults([]);
 
@@ -31,96 +54,98 @@ export default function AddSoftware() {
       const regQ = query(
         collection(db, "master_registry"), 
         where("active", "==", true),
-        limit(20)
+        // Firestore has no full-text search. This is a bounded scan over the
+        // active catalog, filtered in memory; it is honest about its ceiling
+        // until a search index is added.
+        limit(200),
       );
       const regSnap = await getDocs(regQ);
+      const needle = queryVal.toLowerCase();
       const regResults = regSnap.docs
-        .map(d => ({ id: d.id, ...d.data() } as any))
-        .filter(r => r.name.toLowerCase().includes(queryVal.toLowerCase()));
-      
+        .map(d => ({ id: d.id, ...d.data() } as SearchItem))
+        .filter(r => (r.name || "").toLowerCase().includes(needle));
       setSearchResults(regResults);
-
-      const result = await discoverSources(queryVal);
-      const slug = result.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-      
-      const discoveredItem = {
-        ...result,
-        id: slug,
-        isNew: true
-      };
-
-      setSearchResults(prev => {
-        if (prev.some(p => p.id === slug)) return prev;
-        return [...prev, discoveredItem];
-      });
     } catch (e) {
-      console.error("Discovery error", e);
-      setSearchResults([{ id: queryVal, name: queryVal, type: 'topic' }]);
+      console.error("Search error", e);
+      toast.error("Could not search the catalogue");
     } finally {
       setIsSearching(false);
     }
   };
 
-  const addToLibrary = async (item: any) => {
-    if (!user) return;
-    const type = item.type === 'topic' ? 'topic' : 'software';
-    const idOrTopic = item.id;
-    const name = item.name;
-
-    // Fast Add Mode: Start UI feedback immediately
-    toast.success(`Tracked ${name}! Processing updates in the background...`);
-    
+  /**
+   * Discovery is a button, not a side effect of typing (docs/PRODUCT.md §6).
+   * The server calls Gemini and writes the catalog entry; this client never
+   * sees the key and never writes `master_registry`.
+   */
+  const handleDiscover = async () => {
+    const queryVal = val.trim();
+    if (!queryVal || !user) return;
+    setIsDiscovering(true);
     try {
-      if (item.isNew && type === 'software') {
-        await setDoc(doc(db, "master_registry", item.id), {
-          name: item.name,
-          vendor: item.vendor || null,
-          website: item.website || null,
-          icon_url: item.icon_url || null,
-          type: item.type,
-          github_url: item.github_url || null,
-          rss_url: item.rss_url || null,
-          slug: item.id,
-          active: true,
-          lastCheck: new Date().toISOString()
-        });
+      const result = await userApi.discover(queryVal);
+      if (result.alreadyExisted) {
+        toast.success("That one is already in the catalogue");
+      } else {
+        toast.success("Sources found — release notes will arrive as the pipeline runs");
       }
-
-      await addDoc(collection(db, "interests"), {
-        userId: user.uid,
-        softwareId: type === 'software' ? idOrTopic : null,
-        topic: type === 'topic' ? idOrTopic : null,
-        softwareName: name,
-        type,
-        following: false,
-        createdAt: new Date().toISOString()
+      setSearchResults((prev) => {
+        if (prev.some((item) => item.id === result.softwareId)) return prev;
+        return [{
+          id: result.softwareId,
+          name: queryVal,
+          type: "software",
+          isNew: true,
+        }, ...prev];
       });
-
-      if (type === 'software') {
-        // Trigger background processing
-        const softwareData = {
-          id: idOrTopic,
-          name: name,
-          github_url: item.github_url,
-          rss_url: item.rss_url,
-          website: item.website
-        };
-
-        // Create tasks and fire background jobs
-        const pollTaskId = await createTask('initial_poll', idOrTopic, name);
-        pollSoftware(softwareData, pollTaskId).catch(console.error);
-
-        const historyTaskId = await createTask('history_scrape', idOrTopic, name);
-        pollSoftwareHistory(softwareData, historyTaskId).catch(console.error);
-      }
-      
-      // Immediate Navigation
-      navigate('/library');
-    } catch (e) {
-      toast.error("Failed to add to library");
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "Discovery failed";
+      toast.error(message);
+    } finally {
+      setIsDiscovering(false);
     }
   };
 
+  const addToLibrary = async (item: SearchItem) => {
+    if (!user) return;
+    if (atLimit) {
+      toast.error(`The ${tierLabel(tier)} plan tracks up to ${limits.maxTrackedItems} items. Remove one or upgrade.`);
+      return;
+    }
+
+    const type = item.type === "topic" ? "topic" : "software";
+    const name = item.name;
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+    const interestId = type === "software"
+      ? `${user.uid}_${item.id}`
+      : `${user.uid}_topic_${slug || "untitled"}`;
+
+    try {
+      // Deterministic id: a repeated follow is an idempotent overwrite, not a
+      // duplicate notification (docs/DATA_MODEL.md §2).
+      const ref = doc(db, "interests", interestId);
+      if ((await getDoc(ref)).exists()) {
+        toast.error(`You already track "${name}"`);
+        return;
+      }
+
+      await setDoc(ref, {
+        userId: user.uid,
+        softwareId: type === "software" ? item.id : null,
+        topic: type === "topic" ? name : null,
+        softwareName: name,
+        type,
+        following: true,
+        createdAt: new Date().toISOString(),
+      });
+
+      toast.success(`Tracking ${name}`);
+      navigate("/library");
+    } catch (e) {
+      console.error("Add failed", e);
+      toast.error("Failed to add to library");
+    }
+  };
 
   return (
     <Container maxWidth="md" sx={{ py: 6 }}>
@@ -132,10 +157,28 @@ export default function AddSoftware() {
         Back to Library
       </Button>
 
-      <Box sx={{ mb: 6 }}>
+      <Box sx={{ mb: 4 }}>
         <Typography variant="h4" sx={{ fontWeight: 900, mb: 1, lineHeight: 1.2 }}>Discover Software</Typography>
-        <Typography variant="caption" color="text.secondary">Search for a tool or library. Items are only added to the centralized registry and your library when you click "Track Updates".</Typography>
+        <Typography variant="caption" color="text.secondary">
+          Search the catalogue first. If it is missing, one explicit AI discovery finds its changelog.
+        </Typography>
+        <Box sx={{ mt: 2 }}>
+          <Chip
+            size="small"
+            label={`${tierLabel(tier)} plan • ${trackedCount}${limits.maxTrackedItems === null || isAdmin ? '' : ` / ${limits.maxTrackedItems}`} tracked`}
+            color={atLimit ? "warning" : "default"}
+            variant="outlined"
+            sx={{ fontWeight: 700 }}
+          />
+        </Box>
       </Box>
+
+      {atLimit && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          You have reached the {tierLabel(tier)} limit of {limits.maxTrackedItems} tracked items.
+          Remove one in your library, or ask an administrator to upgrade the account.
+        </Alert>
+      )}
 
       <Paper 
         sx={{ 
@@ -143,7 +186,7 @@ export default function AddSoftware() {
           display: 'flex', 
           borderRadius: 4, 
           border: '2px solid rgba(242, 125, 38, 0.2)',
-          mb: 6
+          mb: 4
         }}
       >
         <TextField
@@ -160,7 +203,7 @@ export default function AddSoftware() {
         <Button 
           variant="contained" 
           onClick={() => handleSearch(val)}
-          disabled={isSearching}
+          disabled={isSearching || !val.trim()}
           startIcon={isSearching ? <CircularProgress size={16} color="inherit" /> : <SearchIcon size={18} />}
           sx={{ borderRadius: 3, px: 4 }}
         >
@@ -178,25 +221,27 @@ export default function AddSoftware() {
               sx={{ p: 2, border: '1px solid rgba(255, 255, 255, 0.05)', bgcolor: 'rgba(255, 255, 255, 0.01)' }}
             >
               <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                <Avatar src={item.icon_url} sx={{ width: 44, height: 44, bgcolor: 'rgba(255,255,255,0.1)' }}>
+                <Avatar src={item.icon_url || undefined} sx={{ width: 44, height: 44, bgcolor: 'rgba(255,255,255,0.1)' }}>
                   {item.name[0]}
                 </Avatar>
                 <Box sx={{ flex: 1 }}>
                   <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                     <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{item.name}</Typography>
+                    {item.isNew && <Chip label="New sources" size="small" color="primary" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 800 }} />}
                     {item.website && (
-                      <IconButton size="small" href={item.website} target="_blank">
+                      <IconButton size="small" href={item.website} target="_blank" rel="noreferrer">
                         <ExternalLink size={14} />
                       </IconButton>
                     )}
                   </Box>
                   <Typography variant="caption" color="text.secondary">
-                    {item.vendor || item.type}
+                    {item.vendor || item.type || "software"}
                   </Typography>
                 </Box>
                 <Button 
                   variant="contained"
                   onClick={() => addToLibrary(item)}
+                  disabled={atLimit}
                   startIcon={<Plus size={16} />}
                   sx={{ borderRadius: 100 }}
                 >
@@ -214,10 +259,29 @@ export default function AddSoftware() {
         </Box>
       )}
 
-      {val && !isSearching && searchResults.length === 0 && (
-        <Box sx={{ py: 4, textAlign: 'center' }}>
-          <Typography color="text.secondary">No results found for "{val}"</Typography>
-        </Box>
+      {val.trim() && !isSearching && searchResults.length === 0 && (
+        <Paper sx={{ mt: 3, p: 3, border: '1px dashed rgba(242, 125, 38, 0.35)', bgcolor: 'rgba(242, 125, 38, 0.03)' }}>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+            <Box sx={{ color: 'primary.main', mt: 0.3 }}><Sparkles size={22} /></Box>
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                Not in the catalogue?
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Ask the server to find sources for “{val.trim()}”. This spends one AI discovery call and
+                queues the first poll. No key or scraper runs in your browser.
+              </Typography>
+              <Button
+                variant="outlined"
+                onClick={handleDiscover}
+                disabled={isDiscovering}
+                startIcon={isDiscovering ? <CircularProgress size={16} color="inherit" /> : <Globe size={16} />}
+              >
+                {isDiscovering ? "Finding sources…" : "Find sources"}
+              </Button>
+            </Box>
+          </Box>
+        </Paper>
       )}
     </Container>
   );

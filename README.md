@@ -46,7 +46,7 @@ cd android && ./gradlew assembleDebug
 # Everything the CI gates on
 cd android && ./gradlew assembleDebug lintDebug testDebugUnitTest test
 
-# Firestore security rules (starts the emulator, runs 31 cases)
+# Firestore security rules (starts the emulator, runs 36 cases)
 cd firebase && pnpm install && pnpm run test:rules
 ```
 

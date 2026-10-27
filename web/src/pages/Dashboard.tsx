@@ -4,10 +4,11 @@ import {
   InputAdornment, Chip, CircularProgress, Paper, Divider, 
   Select, MenuItem, FormControl, InputLabel, Pagination 
 } from "@mui/material";
-import { collection, query, orderBy, onSnapshot, getDocs, where, limit, updateDoc, doc } from "firebase/firestore";
-import { Filter, Calendar, ChevronRight, ChevronLeft } from "lucide-react";
+import { collection, query, orderBy, onSnapshot, where, limit, updateDoc, doc } from "firebase/firestore";
+import { Calendar, ChevronRight, ChevronLeft } from "lucide-react";
 import { useAuth } from "../App";
 import { db } from "../services/firebase";
+import { historyStart, tierLabel } from "../services/entitlements";
 import ReleaseCard from "../components/Dashboard/ReleaseCard";
 
 import { Link } from "react-router-dom";
@@ -21,6 +22,8 @@ export default function Dashboard() {
   const [releases, setReleases] = useState<any[]>([]);
   const [interests, setInterests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [liveState, setLiveState] = useState<"idle" | "live" | "cache">("idle");
+  const [liveAt, setLiveAt] = useState<Date | null>(null);
   
   // Date Filtering State
   const [dateRangeType, setDateRangeType] = useState("3m");
@@ -41,6 +44,9 @@ export default function Dashboard() {
     const q = query(collection(db, "interests"), where("userId", "==", user.uid));
     const unsubscribe = onSnapshot(q, (snap) => {
       setInterests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {
+      setInterests([]);
+      setLoading(false);
     });
     return () => unsubscribe();
   }, [user]);
@@ -73,45 +79,76 @@ export default function Dashboard() {
     setEndDate(end.toISOString().split('T')[0]);
   };
 
-  // Fetch Releases based on interests
+  // A live feed, scoped to this user's library.
+  //
+  // The old query listened to the 200 newest release notes in the whole
+  // database and filtered them in memory — so a busy catalog could push a
+  // user's own releases out of the window and make the feed look empty. This
+  // subscribes per `softwareId` chunk instead (Firestore caps `in` at 30),
+  // which keeps the listener both real-time and correct.
+  const librarySoftwareKey = useMemo(
+    () => Array.from(new Set(
+      interests
+        .filter((interest) => typeof interest.softwareId === "string" && interest.softwareId.length > 0)
+        .map((interest) => interest.softwareId as string),
+    )).sort().join("|"),
+    [interests],
+  );
+
   useEffect(() => {
-    if (!user || interests.length === 0) {
-      if (interests.length === 0 && !loading) {
-        setReleases([]);
-      }
+    if (!user) return;
+    const softwareIds = librarySoftwareKey ? librarySoftwareKey.split("|") : [];
+
+    if (softwareIds.length === 0) {
+      setReleases([]);
+      setLoading(false);
+      setLiveState("idle");
       return;
     }
 
     setLoading(true);
-    // Standard query: last 3 months by default (this is handled in memory filtering to account for varied ranges)
-    const q = query(
-      collection(db, "release_notes"),
-      orderBy("releaseDate", "desc"),
-      limit(200) // Fetch a reasonable chunk for client-side filtering and pagination
-    );
+    const chunks: string[][] = [];
+    for (let i = 0; i < softwareIds.length; i += 10) chunks.push(softwareIds.slice(i, i + 10));
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const allReleases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      
-      // Deduplicate: Latest 1 card per app
-      const uniqueReleasesMap = new Map();
-      allReleases.forEach(r => {
-        if (!uniqueReleasesMap.has(r.softwareId)) {
-          uniqueReleasesMap.set(r.softwareId, r);
-        } else {
-          const existing = uniqueReleasesMap.get(r.softwareId);
-          if (new Date(r.releaseDate) > new Date(existing.releaseDate)) {
-            uniqueReleasesMap.set(r.softwareId, r);
-          }
-        }
+    const perChunk = new Map<number, any[]>();
+    const cachedChunks = new Set<number>();
+
+    const publish = () => {
+      const merged = new Map<string, any>();
+      perChunk.forEach((rows) => rows.forEach((row) => merged.set(row.id, row)));
+      const next = Array.from(merged.values()).sort((a, b) => {
+        const aTime = new Date(a.releaseDate || a.createdAt || 0).getTime();
+        const bTime = new Date(b.releaseDate || b.createdAt || 0).getTime();
+        return bTime - aTime;
       });
-      
-      setReleases(Array.from(uniqueReleasesMap.values()));
+      setReleases(next);
       setLoading(false);
-    });
+      setLiveAt(new Date());
+      setLiveState(cachedChunks.size > 0 ? "cache" : "live");
+    };
 
-    return () => unsubscribe();
-  }, [user, interests.length]);
+    const unsubscribes = chunks.map((ids, index) => onSnapshot(
+      query(
+        collection(db, "release_notes"),
+        where("softwareId", "in", ids),
+        orderBy("releaseDate", "desc"),
+        limit(50),
+      ),
+      (snapshot) => {
+        perChunk.set(index, snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
+        if (snapshot.metadata.fromCache) cachedChunks.add(index);
+        else cachedChunks.delete(index);
+        publish();
+      },
+      () => {
+        // One failed chunk must not blank the whole feed.
+        cachedChunks.add(index);
+        publish();
+      },
+    ));
+
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+  }, [user, librarySoftwareKey]);
 
   const filteredReleases = useMemo(() => {
     const softwareInterests = interests.filter(i => i.type === 'software');
@@ -126,8 +163,22 @@ export default function Dashboard() {
       base = releases.filter(r => notFollowedIds.includes(r.softwareId));
     }
 
-    // 2. Date Filter
-    const sDate = new Date(startDate);
+    // One card per product: the dashboard is "what changed lately", not a
+    // second copy of the release timeline.
+    const latestPerSoftware = new Map<string, any>();
+    base.forEach((release) => {
+      const existing = latestPerSoftware.get(release.softwareId);
+      const releaseTime = new Date(release.releaseDate || release.createdAt || 0).getTime();
+      const existingTime = existing ? new Date(existing.releaseDate || existing.createdAt || 0).getTime() : -Infinity;
+      if (!existing || releaseTime > existingTime) latestPerSoftware.set(release.softwareId, release);
+    });
+    base = Array.from(latestPerSoftware.values());
+
+    // Free accounts see a 30-day window; paid accounts see everything. The
+    // custom date picker cannot widen a plan's window.
+    const tierStart = historyStart(tier);
+    const requestedStart = new Date(startDate);
+    const sDate = tierStart && requestedStart < tierStart ? tierStart : requestedStart;
     const eDate = new Date(endDate);
     eDate.setHours(23, 59, 59, 999);
 
@@ -141,7 +192,7 @@ export default function Dashboard() {
       
       return matchesDate && matchesCategory && matchesTopic;
     });
-  }, [releases, tab, interests, startDate, endDate, timelineCategory, selectedTopic]);
+  }, [releases, tab, interests, startDate, endDate, timelineCategory, selectedTopic, tier]);
 
   const paginatedReleases = useMemo(() => {
     const start = (page - 1) * ITEMS_PER_PAGE;
@@ -168,11 +219,22 @@ export default function Dashboard() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, lineHeight: 1.2 }}>Release Updates</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+            <Typography variant="h4" sx={{ fontWeight: 800, lineHeight: 1.2 }}>Release Updates</Typography>
+            <Chip
+              size="small"
+              label={liveState === 'live' ? 'LIVE' : liveState === 'cache' ? 'CACHED' : 'IDLE'}
+              color={liveState === 'live' ? 'success' : liveState === 'cache' ? 'warning' : 'default'}
+              variant={liveState === 'live' ? 'filled' : 'outlined'}
+              sx={{ fontWeight: 900, fontSize: '0.6rem', letterSpacing: 1 }}
+            />
+          </Box>
           <Typography variant="caption" color="text.secondary">
-            Feed status: Active • Tracking <b>{interests.length}</b> products • Plan: <b>{tier}</b>
+            Tracking <b>{interests.length}</b> items • Plan: <b>{tierLabel(tier)}</b>
+            {tier === 'FREE' ? ' • Last 30 days' : ' • Full history'}
+            {liveAt ? ` • Updated ${liveAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
           </Typography>
         </Box>
       </Box>
@@ -311,7 +373,8 @@ export default function Dashboard() {
                 <Box sx={{ textAlign: "center", py: 12, bgcolor: "rgba(255, 255, 255, 0.02)", borderRadius: 4, border: '1px dashed rgba(255, 255, 255, 0.1)' }}>
                   <Typography variant="h6" color="text.secondary" gutterBottom>No Updates Found</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Try Broadening your filters or following more products in your library.
+                    Nothing has shipped in this window yet. The feed updates live as the pipeline publishes releases.
+                    {tier === 'FREE' && ' Free shows the last 30 days; Pro shows the full timeline.'}
                   </Typography>
                 </Box>
               </Grid>

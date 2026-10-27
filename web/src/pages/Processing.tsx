@@ -12,9 +12,10 @@ import {
   Search, Shield, ChevronRight, LayoutDashboard, History,
   Activity
 } from "lucide-react";
-import { collection, query, orderBy, onSnapshot, deleteDoc, doc, limit } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, limit } from "firebase/firestore";
 import { db } from "../services/firebase";
-import { BackgroundTask } from "../services/taskService";
+import type { BackgroundTask } from "../types/task";
+import { adminApi, ApiError } from "../services/api";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -36,15 +37,15 @@ export default function Processing() {
       const taskList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BackgroundTask));
       setTasks(taskList);
       setLoading(false);
-    });
+    }, () => setLoading(false));
   }, []);
 
   const handleDeleteTask = async (id: string) => {
     try {
-      await deleteDoc(doc(db, "background_tasks", id));
+      await adminApi.deleteTask(id);
       toast.success("Task log cleared");
     } catch (err) {
-      toast.error("Failed to delete task");
+      toast.error(err instanceof ApiError ? err.message : "Failed to delete task");
     }
   };
 

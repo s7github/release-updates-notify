@@ -18,28 +18,10 @@ import {
 } from "@mui/material";
 import { DataGrid, GridColDef, GridActionsCellItem } from "@mui/x-data-grid";
 import { RefreshCw, Trash2, Edit2, Zap, ExternalLink, Globe, Github, Rss, Settings, Database, Search, CheckCircle, AlertTriangle } from "lucide-react";
-import { collection, query, onSnapshot, doc, deleteDoc, updateDoc, setDoc, addDoc, getDocs, where, getDoc, writeBatch } from "firebase/firestore";
+import { collection, query, onSnapshot } from "firebase/firestore";
 import { db } from "../../services/firebase";
-import { discoverSources } from "../../services/gemini";
+import { adminApi, ApiError } from "../../services/api";
 import toast from "react-hot-toast";
-
-import { pollSoftware, pollSoftwareHistory } from "../../services/pollService";
-
-const MANUAL_LOGO_OVERRIDES: Record<string, string> = {
-  "fl studio": "https://logo.clearbit.com/image-line.com",
-  "image-line": "https://logo.clearbit.com/image-line.com",
-  "ableton live": "https://logo.clearbit.com/ableton.com",
-  "logic pro": "https://logo.clearbit.com/apple.com",
-  "suno": "https://logo.clearbit.com/suno.com"
-};
-
-const getLogo = (name: string, discoveredUrl: string | null) => {
-  const key = name.toLowerCase();
-  for (const [k, v] of Object.entries(MANUAL_LOGO_OVERRIDES)) {
-    if (key.includes(k)) return v;
-  }
-  return discoveredUrl;
-};
 
 export default function RegistryManager() {
   const navigate = useNavigate();
@@ -64,27 +46,11 @@ export default function RegistryManager() {
     setRefreshingId(software.id);
     const toastId = toast.loading(`Full Sync for ${software.name}...`);
     try {
-      // 1. Refresh Metadata
-      const discovery = await discoverSources(software.name);
-      const updates = {
-        vendor: discovery.vendor || software.vendor,
-        website: discovery.website || software.website,
-        icon_url: getLogo(software.name, discovery.icon_url) || software.icon_url,
-        github_url: discovery.github_url || software.github_url,
-        rss_url: discovery.rss_url || software.rss_url,
-        suggested_priority: discovery.suggested_priority || software.suggested_priority,
-        lastMetadataUpdate: new Date().toISOString()
-      };
-      await updateDoc(doc(db, "master_registry", software.id), updates);
-      
-      // 2. Poll for updates
-      const updatedSoftware = { ...software, ...updates };
-      await pollSoftware(updatedSoftware);
-      
-      toast.success(`${software.name} synced successfully!`, { id: toastId });
+      await adminApi.discoverRegistry(software.id);
+      await adminApi.pollRegistry(software.id);
+      toast.success(`${software.name} sources refreshed and a poll queued`, { id: toastId });
     } catch (error: any) {
-      console.error(error);
-      toast.error(`Sync failed: ${error.message}`, { id: toastId });
+      toast.error(error instanceof ApiError ? error.message : "Sync failed", { id: toastId });
     } finally {
       setRefreshingId(null);
     }
@@ -92,13 +58,12 @@ export default function RegistryManager() {
 
   const handleDeepHistoryScrape = async (software: any) => {
     setHistoryLoadingId(software.id);
-    const toastId = toast.loading(`Deep Scraping History for ${software.name}...`);
+    const toastId = toast.loading(`Queueing deep history for ${software.name}...`);
     try {
-      const results = await pollSoftwareHistory(software);
-      toast.success(`Discovered ${results.length} historical releases!`, { id: toastId });
+      await adminApi.pollRegistry(software.id, { includeHistory: true });
+      toast.success("History scrape queued — progress is on the Processing page", { id: toastId });
     } catch (error: any) {
-      console.error(error);
-      toast.error(`Scrape failed: ${error.message}`, { id: toastId });
+      toast.error(error instanceof ApiError ? error.message : "Scrape failed", { id: toastId });
     } finally {
       setHistoryLoadingId(null);
     }
@@ -108,34 +73,28 @@ export default function RegistryManager() {
     if (!newSoftwareBatch.trim()) return;
     const names = newSoftwareBatch.split(',').map(n => n.trim()).filter(n => n);
     const toastId = toast.loading(`Adding ${names.length} items...`);
-    
+    const failures: string[] = [];
+    let added = 0;
+
     try {
       for (const name of names) {
-        const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-        const docRef = doc(db, "master_registry", id);
-        
-        // Initial skeleton entry
-        await setDoc(docRef, {
-          name,
-          vendor: "Pending Discovery",
-          active: true,
-          createdAt: new Date().toISOString()
-        });
-        
-        // Trigger background discovery
-        discoverSources(name).then(async (discovery) => {
-          await updateDoc(docRef, {
-            ...discovery,
-            icon_url: getLogo(name, discovery.icon_url),
-            lastMetadataUpdate: new Date().toISOString()
-          });
-        });
+        try {
+          const result = await adminApi.createRegistry(name, true);
+          added += 1;
+          if (result.warning) failures.push(`${name}: ${result.warning}`);
+        } catch (error) {
+          failures.push(`${name}: ${error instanceof ApiError ? error.message : "failed"}`);
+        }
       }
-      toast.success(`Started onboarding for ${names.length} items`, { id: toastId });
+      if (failures.length > 0) {
+        toast.error(`Added ${added}. ${failures.join(" · ")}`, { id: toastId, duration: 8000 });
+      } else {
+        toast.success(`Onboarded ${added} items`, { id: toastId });
+      }
       setAddOpen(false);
       setNewSoftwareBatch("");
     } catch (e) {
-      toast.error("Failed to add software");
+      toast.error("Failed to add software", { id: toastId });
     }
   };
 
@@ -144,48 +103,33 @@ export default function RegistryManager() {
     const unsubscribe = onSnapshot(q, (snap) => {
       setRows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setLoading(false);
+    }, () => {
+      setLoading(false);
+      toast.error("Could not read the catalogue");
     });
     return () => unsubscribe();
   }, []);
 
   const handlePoll = async (software: any) => {
     setPollingId(software.id);
-    const toastId = toast.loading(`Polling ${software.name}...`);
+    const toastId = toast.loading(`Queueing poll for ${software.name}...`);
     try {
-      const extracted = await pollSoftware(software);
-      toast.success(`New version ${extracted.version} found!`, { id: toastId });
+      await adminApi.pollRegistry(software.id);
+      toast.success("Poll queued — the pipeline will report on the Processing page", { id: toastId });
     } catch (error: any) {
-      console.error(error);
-      toast.error(`Poll failed: ${error.message}`, { id: toastId });
+      toast.error(error instanceof ApiError ? error.message : "Poll failed", { id: toastId });
     } finally {
       setPollingId(null);
     }
   };
 
   const deleteSoftware = async (id: string, name: string) => {
-    console.log("Delete triggered for:", id, "Name:", name);
     const toastId = toast.loading(`Purging ${name}...`);
     try {
-      const batch = writeBatch(db);
-      
-      // 1. Delete the registry entry
-      batch.delete(doc(db, "master_registry", id));
-      
-      // 2. Delete all release notes
-      const notesQ = query(collection(db, "release_notes"), where("softwareId", "==", id));
-      const notesSnap = await getDocs(notesQ);
-      notesSnap.forEach(n => batch.delete(n.ref));
-      
-      // 3. Delete all interests (user tracks)
-      const interestsQ = query(collection(db, "interests"), where("softwareId", "==", id));
-      const interestsSnap = await getDocs(interestsQ);
-      interestsSnap.forEach(i => batch.delete(i.ref));
-      
-      await batch.commit();
-      toast.success(`"${name}" and all associated data purged.`, { id: toastId });
+      const result = await adminApi.deleteRegistry(id, name);
+      toast.success(`"${name}" and all associated data purged (${result.deletedReleases} releases).`, { id: toastId });
     } catch (e: any) {
-      console.error("Delete failed:", e);
-      toast.error("Failed to delete: " + e.message, { id: toastId });
+      toast.error(e instanceof ApiError ? e.message : "Failed to delete", { id: toastId });
     } finally {
       setDeleteOpen(false);
       setSoftwareToDelete(null);
@@ -193,20 +137,16 @@ export default function RegistryManager() {
   };
 
   const handlePollAll = async () => {
-    const activeRows = rows.filter(r => r.active !== false);
-    const toastId = toast.loading(`Initiating global poll for ${activeRows.length} items...`);
-    let successCount = 0;
-    
-    for (const row of activeRows) {
-      try {
-        await pollSoftware(row);
-        successCount++;
-      } catch (e) {
-        console.error(`Poll failed for ${row.name}`, e);
-      }
+    const toastId = toast.loading("Queueing every active catalog entry...");
+    try {
+      const result = await adminApi.pollAll();
+      toast.success(
+        `Queued ${result.enqueued} polls${result.failures.length ? `; ${result.failures.length} failed` : ""}`,
+        { id: toastId },
+      );
+    } catch (error: any) {
+      toast.error(error instanceof ApiError ? error.message : "Scan failed", { id: toastId });
     }
-    
-    toast.success(`Global scan complete. Updated ${successCount} items.`, { id: toastId });
   };
 
   const columns: GridColDef[] = [

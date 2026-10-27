@@ -1,13 +1,14 @@
-import { AppBar, Toolbar, Typography, Button, Container, Avatar, IconButton, Badge, Box, Tooltip } from "@mui/material";
-import { LogOut, LayoutDashboard, Shield, Library, Activity, RefreshCw } from "lucide-react";
+import { AppBar, Toolbar, Typography, Button, Container, Avatar, IconButton, Badge, Box, Tooltip, Chip } from "@mui/material";
+import { LogOut, LayoutDashboard, Shield, Library, Activity } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { auth, db } from "../../services/firebase";
 import { useAuth } from "../../App";
+import { tierLabel } from "../../services/entitlements";
 import { useState, useEffect } from "react";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 
 export default function Navbar() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, tier } = useAuth();
   const location = useLocation();
   const [activeCount, setActiveCount] = useState(0);
 
@@ -19,7 +20,7 @@ export default function Navbar() {
     );
     return onSnapshot(q, (snap) => {
       setActiveCount(snap.size);
-    });
+    }, () => setActiveCount(0));
   }, [isAdmin]);
 
   const handleLogout = () => auth.signOut();
@@ -33,6 +34,15 @@ export default function Navbar() {
           </Typography>
 
           <Box sx={{ display: 'flex', gap: { xs: 0.2, sm: 1 }, alignItems: "center" }}>
+            <Tooltip title={`Subscription: ${tierLabel(tier)}`}>
+              <Chip
+                label={tier}
+                size="small"
+                color={tier === 'FREE' ? 'default' : 'primary'}
+                variant={tier === 'FREE' ? 'outlined' : 'filled'}
+                sx={{ fontWeight: 800, fontSize: '0.65rem', height: 22, display: { xs: 'none', sm: 'inline-flex' } }}
+              />
+            </Tooltip>
             <Button 
               component={Link} 
               to="/dashboard" 

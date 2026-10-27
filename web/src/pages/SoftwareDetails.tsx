@@ -32,12 +32,11 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { 
   collection, query, where, orderBy, onSnapshot, 
-  doc, getDoc, updateDoc, deleteDoc, writeBatch, getDocs,
-  limit
+  doc, getDoc, limit
 } from "firebase/firestore";
 import { db } from "../services/firebase";
-import { pollSoftware } from "../services/pollService";
-import { discoverSources } from "../services/gemini";
+import { adminApi, ApiError } from "../services/api";
+import { limitsFor } from "../services/entitlements";
 import Markdown from "react-markdown";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../App";
@@ -160,7 +159,7 @@ function SortablePriorityItem({ field, idx, priorityLength, editedSoftware, setE
 export default function SoftwareDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isAdmin, tier } = useAuth();
   
   const [software, setSoftware] = useState<any>(null);
   const [notes, setNotes] = useState<any[]>([]);
@@ -176,9 +175,10 @@ export default function SoftwareDetails() {
   const [isScraping, setIsScraping] = useState(false);
   const [historyScrapeOpen, setHistoryScrapeOpen] = useState(false);
   const [activeTask, setActiveTask] = useState<any>(null);
+  const timelineLimit = isAdmin ? 1000 : limitsFor(tier).timelineItems;
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !isAdmin) return;
     const q = query(
       collection(db, "background_tasks"),
       where("softwareId", "==", id),
@@ -187,8 +187,8 @@ export default function SoftwareDetails() {
     );
     return onSnapshot(q, (snap) => {
       setActiveTask(snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() });
-    });
-  }, [id]);
+    }, () => setActiveTask(null));
+  }, [id, isAdmin]);
   
   // Bulk Delete
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -196,30 +196,16 @@ export default function SoftwareDetails() {
   const [endDate, setEndDate] = useState("");
 
   const handleFullSync = async () => {
-    if (!software) return;
+    if (!software || !id) return;
     setIsSyncing(true);
     const toastId = toast.loading(`Full Sync for ${software.name}...`);
     try {
-      const discovery = await discoverSources(software.name);
-      const updates = {
-        vendor: discovery.vendor || software.vendor,
-        website: discovery.website || software.website,
-        icon_url: getLogo(software.name, discovery.icon_url) || software.icon_url,
-        github_url: discovery.github_url || software.github_url,
-        rss_url: discovery.rss_url || software.rss_url,
-        suggested_priority: discovery.suggested_priority || software.suggested_priority,
-        lastMetadataUpdate: new Date().toISOString()
-      };
-      await updateDoc(doc(db, "master_registry", id!), updates);
-      
-      const updatedSoftware = { ...software, ...updates };
-      setSoftware(updatedSoftware);
-      setEditedSoftware(updatedSoftware);
-      
-      await pollSoftware(updatedSoftware);
-      toast.success(`${software.name} synced and updated!`, { id: toastId });
+      await adminApi.discoverRegistry(id);
+      await adminApi.pollRegistry(id);
+      await fetchSoftware();
+      toast.success(`${software.name} sources refreshed and a poll queued`, { id: toastId });
     } catch (error: any) {
-      toast.error(`Sync failed: ${error.message}`, { id: toastId });
+      toast.error(error instanceof ApiError ? error.message : "Sync failed", { id: toastId });
     } finally {
       setIsSyncing(false);
     }
@@ -250,28 +236,11 @@ export default function SoftwareDetails() {
     setIsAIVerifying(true);
     const tid = toast.loading(`AI Agent is analyzing sources for ${software.name}...`);
     try {
-      const discovered = await discoverSources(software.name);
-      if (discovered) {
-        const newSources = {
-          website: discovered.website || software.website,
-          github_url: discovered.github_url || software.github_url,
-          rss_url: discovered.rss_url || software.rss_url,
-          changelog_url: discovered.changelog_url || software.changelog_url,
-          suggested_priority: discovered.suggested_priority || software.suggested_priority || [],
-          sourcesVerified: true
-        };
-        await updateDoc(doc(db, "master_registry", id), newSources);
-        setSoftware({...software, ...newSources});
-        if (editedSoftware) {
-          setEditedSoftware({...editedSoftware, ...newSources});
-        }
-        toast.success(`Sources verified and updated for ${software.name}`, { id: tid });
-      } else {
-        toast.error("AI could not find alternative sources.", { id: tid });
-      }
+      await adminApi.discoverRegistry(id);
+      await fetchSoftware();
+      toast.success(`Sources verified and updated for ${software.name}`, { id: tid });
     } catch (e: any) {
-      console.error(e);
-      toast.error("AI Verification failed: " + e.message, { id: tid });
+      toast.error(e instanceof ApiError ? e.message : "AI verification failed", { id: tid });
     } finally {
       setIsAIVerifying(false);
     }
@@ -284,7 +253,10 @@ export default function SoftwareDetails() {
     const q = query(
       collection(db, "release_notes"),
       where("softwareId", "==", id),
-      orderBy("releaseDate", "desc")
+      orderBy("releaseDate", "desc"),
+      // Tier-aware read: Free sees the latest five, paid plans the full
+      // timeline. The query itself is limited, not just the rendering.
+      limit(timelineLimit),
     );
 
     return onSnapshot(q, (snap) => {
@@ -299,8 +271,8 @@ export default function SoftwareDetails() {
       });
       
       setLoading(false);
-    });
-  }, [id]);
+    }, () => setLoading(false));
+  }, [id, timelineLimit]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -314,21 +286,14 @@ export default function SoftwareDetails() {
   );
 
   const performDeleteProduct = async () => {
+    if (!id || !software) return;
     const toastId = toast.loading("Deleting product...");
     try {
-      const batch = writeBatch(db);
-      batch.delete(doc(db, "master_registry", id!));
-      const notesQ = query(collection(db, "release_notes"), where("softwareId", "==", id));
-      const notesSnap = await getDocs(notesQ);
-      notesSnap.forEach(n => batch.delete(n.ref));
-      const interestsQ = query(collection(db, "interests"), where("softwareId", "==", id));
-      const interestsSnap = await getDocs(interestsQ);
-      interestsSnap.forEach(i => batch.delete(i.ref));
-      await batch.commit();
+      await adminApi.deleteRegistry(id, String(software.name ?? ""));
       toast.success("Product and all data purged successfully", { id: toastId });
       navigate('/library');
     } catch (e: any) {
-      toast.error("Failed to delete product: " + e.message, { id: toastId });
+      toast.error(e instanceof ApiError ? e.message : "Failed to delete product", { id: toastId });
     } finally {
       setDeleteDialogOpen(false);
     }
@@ -374,62 +339,48 @@ export default function SoftwareDetails() {
     if (!id || !editedSoftware) return;
     const toastId = toast.loading("Saving changes...");
     try {
-      // Create a clean copy to save
-      const { id: _, ...dataToSave } = editedSoftware;
-      
-      // Ensure suggested_priority is part of the update
-      await updateDoc(doc(db, "master_registry", id), {
-        ...dataToSave,
-        lastMetadataUpdate: new Date().toISOString()
+      // Only the fields the admin API accepts. Sending the whole document
+      // would be rejected by the server allow-list, which is the point.
+      const editableKeys = [
+        'name', 'vendor', 'website', 'icon_url', 'github_url', 'rss_url',
+        'changelog_url', 'package_registry_url', 'suggested_priority',
+        'priority_order', 'active', 'historyMaxCount', 'historyMinDate',
+        'lastVersion', 'lastReleaseDate', 'sourcesVerified', 'type',
+      ];
+      const patch: Record<string, unknown> = {};
+      editableKeys.forEach((key) => {
+        if (editedSoftware[key] !== undefined) patch[key] = editedSoftware[key];
       });
-      
-      setSoftware(editedSoftware);
+
+      await adminApi.updateRegistry(id, patch);
+      await fetchSoftware();
       setEditMode(false);
       toast.success("Software information updated", { id: toastId });
     } catch (e: any) {
-      console.error("Save error:", e);
-      toast.error("Failed to save changes: " + e.message, { id: toastId });
+      toast.error(e instanceof ApiError ? e.message : "Failed to save changes", { id: toastId });
     }
   };
 
   const toggleVerifyNote = async (noteId: string, currentStatus: boolean) => {
     try {
-      await updateDoc(doc(db, "release_notes", noteId), { isVerified: !currentStatus });
+      await adminApi.updateRelease(noteId, { isVerified: !currentStatus });
       toast.success(currentStatus ? "Marked as unverified" : "Marked as verified");
     } catch (e) {
-      toast.error("Failed to update verification status");
+      toast.error(e instanceof ApiError ? e.message : "Failed to update verification status");
     }
   };
 
   const deleteNote = async (noteId: string) => {
     try {
-      await deleteDoc(doc(db, "release_notes", noteId));
-      
-      // Update local and remote lastVersion if we just deleted the latest one
-      const remainingNotes = notes.filter(n => n.id !== noteId);
-      if (selectedNote?.id === noteId) {
-        setSelectedNote(remainingNotes[0] || null);
-      }
-
-      if (remainingNotes.length > 0) {
-        const latestVersion = remainingNotes[0].version;
-        if (software.lastVersion !== latestVersion) {
-          await updateDoc(doc(db, "master_registry", id!), { lastVersion: latestVersion });
-          setSoftware({ ...software, lastVersion: latestVersion });
-        }
-      } else {
-        await updateDoc(doc(db, "master_registry", id!), { lastVersion: "N/A" });
-        setSoftware({ ...software, lastVersion: "N/A" });
-      }
-
+      await adminApi.deleteRelease(noteId);
       toast.success("Release note removed");
     } catch (e: any) {
-      console.error(e);
-      toast.error("Failed to delete note: " + e.message);
+      toast.error(e instanceof ApiError ? e.message : "Failed to delete note");
     }
   };
 
   const handleBulkDelete = async () => {
+    if (!id) return;
     let toDelete = notes;
     
     if (startDate) {
@@ -448,33 +399,11 @@ export default function SoftwareDetails() {
 
     const toastId = toast.loading(`Deleting ${toDelete.length} notes...`);
     try {
-      const batch = writeBatch(db);
-      toDelete.forEach(n => {
-        batch.delete(doc(db, "release_notes", n.id));
-      });
-      
-      const deleteIds = new Set(toDelete.map(d => d.id));
-      const survivingNotes = notes.filter(n => !deleteIds.has(n.id));
-
-      if (survivingNotes.length > 0) {
-        const latestVersion = survivingNotes[0].version;
-        batch.update(doc(db, "master_registry", id!), { lastVersion: latestVersion });
-        setSoftware({ ...software, lastVersion: latestVersion });
-      } else {
-        batch.update(doc(db, "master_registry", id!), { lastVersion: "N/A" });
-        setSoftware({ ...software, lastVersion: "N/A" });
-      }
-
-      await batch.commit();
-      toast.success(`Success! Deleted ${toDelete.length} release notes.`, { id: toastId });
+      const result = await adminApi.bulkDeleteReleases(id, toDelete.map(n => n.id));
+      toast.success(`Deleted ${result.deleted} release notes. lastVersion was recomputed.`, { id: toastId });
       setBulkDeleteOpen(false);
-      
-      if (selectedNote && deleteIds.has(selectedNote.id)) {
-        setSelectedNote(survivingNotes[0] || null);
-      }
     } catch (e: any) {
-      console.error(e);
-      toast.error("Bulk delete failed: " + e.message, { id: toastId });
+      toast.error(e instanceof ApiError ? e.message : "Bulk delete failed", { id: toastId });
     }
   };
 
@@ -805,6 +734,14 @@ export default function SoftwareDetails() {
             <Typography variant="overline" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
               Release History ({notes.length})
             </Typography>
+
+            {!isAdmin && tier === 'FREE' && notes.length >= timelineLimit && (
+              <Paper sx={{ p: 1.5, mb: 2, border: '1px dashed rgba(242, 125, 38, 0.35)', bgcolor: 'rgba(242, 125, 38, 0.04)' }}>
+                <Typography variant="caption" color="text.secondary">
+                  Free plan limits this timeline to the latest {timelineLimit} releases. Pro shows the full history.
+                </Typography>
+              </Paper>
+            )}
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 'calc(100vh - 400px)', overflowY: 'auto', pr: 1 }}>
               {notes.map((note) => (

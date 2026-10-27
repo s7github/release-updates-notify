@@ -1,13 +1,13 @@
-import { PubSub } from '@google-cloud/pubsub';
 import express, { type Express } from 'express';
 import { requireAuth } from '../lib/auth.js';
-import { config } from '../lib/config.js';
+import { effectiveTier, limitsFor } from '../lib/entitlements.js';
 import { Collections, db } from '../lib/firebase.js';
 import { log } from '../lib/logging.js';
 import { captureException } from '../lib/sentry.js';
 import { consumeQuota } from '../lib/rateLimit.js';
 import { discoverSources } from '../services/gemini.js';
-import { createTask } from '../services/tasks.js';
+import { enqueuePoll } from '../services/pollRequests.js';
+import { createAdminRouter } from './admin.js';
 
 /**
  * The `api` service: the only HTTP surface the Android app talks to.
@@ -15,12 +15,6 @@ import { createTask } from '../services/tasks.js';
  * Two operations, both of which merely **enqueue** work. Neither does the work
  * inline, so a slow scrape never blocks a user-facing request (ADR-0003).
  */
-
-let pubsub: PubSub | undefined;
-function client(): PubSub {
-  if (!pubsub) pubsub = new PubSub();
-  return pubsub;
-}
 
 function slugify(value: string): string {
   return value
@@ -31,13 +25,55 @@ function slugify(value: string): string {
     .slice(0, 100);
 }
 
+async function tierFor(uid: string) {
+  const snap = await db().collection(Collections.USERS).doc(uid).get();
+  return effectiveTier(
+    snap.get('subscriptionTier'),
+    snap.get('subscriptionExpiresAt'),
+  );
+}
+
 export function createApiApp(): Express {
   const app = express();
   app.use(express.json({ limit: '64kb' }));
 
+  // Token auth, not cookies: `*` leaks nothing and keeps the Vercel-hosted
+  // console able to call the Cloud Run / Vercel API from any preview URL.
+  app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'authorization, content-type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+
   app.get('/healthz', (_req, res) => {
     res.json({ status: 'ok', service: 'api' });
   });
+
+  /** Who am I, and what does my tier actually allow? */
+  app.get('/v1/me', requireAuth, async (req, res) => {
+    const uid = req.uid!;
+    const user = await db().collection(Collections.USERS).doc(uid).get();
+    const tier = effectiveTier(
+      user.get('subscriptionTier'),
+      user.get('subscriptionExpiresAt'),
+    );
+    const admin = await db().collection(Collections.ADMINS).doc(uid).get();
+
+    res.json({
+      uid,
+      tier,
+      subscriptionExpiresAt: user.get('subscriptionExpiresAt') ?? null,
+      isAdmin: admin.exists,
+      limits: limitsFor(tier),
+    });
+  });
+
+  app.use('/v1/admin', createAdminRouter());
 
   /**
    * POST /v1/discover — find sources for something not in the catalog.
@@ -54,12 +90,15 @@ export function createApiApp(): Express {
       return;
     }
 
+    const tier = await tierFor(uid);
+    const entitlements = limitsFor(tier);
+
     // Checked before spending anything. This call costs real money.
-    const quota = await consumeQuota(uid, 'discover', config.limits.discoveryPerUserPerHour);
+    const quota = await consumeQuota(uid, 'discover', entitlements.discoveryPerHour);
     if (!quota.allowed) {
       res.status(429)
         .set('Retry-After', String(Math.ceil((quota.resetsAt.getTime() - Date.now()) / 1000)))
-        .json({ error: 'Discovery limit reached. Try again later.' });
+        .json({ error: 'Discovery limit reached. Try again later.', tier });
       return;
     }
 
@@ -95,18 +134,14 @@ export function createApiApp(): Express {
         createdAt: new Date().toISOString(),
       });
 
-      const taskId = await createTask({
-        type: 'initial_poll',
+      const taskId = await enqueuePoll({
         softwareId,
         softwareName: discovered.name || query,
         requestedBy: uid,
+        taskType: 'initial_poll',
       });
 
-      await client().topic(config.topics.pollRequests).publishMessage({
-        json: { softwareId, taskId, requestedBy: uid },
-      });
-
-      log.info('discovered software', { softwareId, uid });
+      log.info('discovered software', { softwareId, uid, tier });
       res.json({ softwareId, taskId, alreadyExisted: false });
     } catch (error) {
       log.error('discovery failed', error, { uid, query });
@@ -126,11 +161,23 @@ export function createApiApp(): Express {
       return;
     }
 
-    const quota = await consumeQuota(uid, 'refresh', config.limits.refreshPerUserPerHour);
+    const tier = await tierFor(uid);
+    const entitlements = limitsFor(tier);
+
+    if (includeHistory && !entitlements.historyBackfill) {
+      res.status(403).json({
+        error: 'History backfill requires Pro',
+        code: 'UPGRADE_REQUIRED',
+        tier,
+      });
+      return;
+    }
+
+    const quota = await consumeQuota(uid, 'refresh', entitlements.refreshPerHour);
     if (!quota.allowed) {
       res.status(429)
         .set('Retry-After', String(Math.ceil((quota.resetsAt.getTime() - Date.now()) / 1000)))
-        .json({ error: 'Refresh limit reached. Try again later.' });
+        .json({ error: 'Refresh limit reached. Try again later.', tier });
       return;
     }
 
@@ -140,18 +187,15 @@ export function createApiApp(): Express {
       return;
     }
 
-    const taskId = await createTask({
-      type: includeHistory ? 'history_scrape' : 'initial_poll',
+    const taskId = await enqueuePoll({
       softwareId,
       softwareName: String(software.get('name') ?? softwareId),
       requestedBy: uid,
+      includeHistory,
+      taskType: includeHistory ? 'history_scrape' : 'initial_poll',
     });
 
-    await client().topic(config.topics.pollRequests).publishMessage({
-      json: { softwareId, taskId, includeHistory, requestedBy: uid },
-    });
-
-    res.json({ taskId });
+    res.json({ taskId, includeHistory, tier });
   });
 
   // Last-resort handler. Without it an unhandled rejection returns an Express

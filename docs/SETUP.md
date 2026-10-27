@@ -178,7 +178,9 @@ pnpm run test:rules     # starts the emulator, runs the suite, shuts it down
 pnpm run emulators      # long-running, with the UI on :4000
 ```
 
-The emulator is a Java process, so JDK 17+ is needed here too.
+The emulator uses port **8090** (8080 is commonly taken by Docker) and the UI is
+at <http://127.0.0.1:4000>. `emulators:exec` exports `FIRESTORE_EMULATOR_HOST`, so
+the test suite follows whatever port the config selects.
 
 Deploying:
 
@@ -200,10 +202,20 @@ pnpm install
 pnpm run dev      # http://localhost:3000
 ```
 
-Needs `GEMINI_API_KEY` in `web/.env` for its client-side AI calls. **That
-pattern is exactly what the Android app does not do** — see
-[ADR-0003](adr/0003-server-side-ai-and-polling.md). The web app inherits it and
-is retained as an internal operator tool ([ADR-0009](adr/0009-keep-web-as-admin-surface.md)).
+The web app is a pure client. It does **not** hold a Gemini key and does not
+scrape; discovery, polling and every privileged write go through the `api`
+service (ADR-0003/0006). Set `VITE_API_URL` when the API is not the deployed
+fallback:
+
+```bash
+# web/.env.local
+VITE_API_URL=http://localhost:8080
+```
+
+On Vercel, set `VITE_API_URL=https://release-update-backend.vercel.app` (or the
+Cloud Run URL) in the project's environment variables. Without it, production
+falls back to the deployed API host, which is correct for the current project
+but wrong for a fork.
 
 ---
 
@@ -213,13 +225,14 @@ is retained as an internal operator tool ([ADR-0009](adr/0009-keep-web-as-admin-
 cd backend
 pnpm install
 pnpm run lint     # typechecks src and test
-pnpm test         # 40 tests; no network, emulator or credentials needed
+pnpm test         # 63 tests; no network, emulator or credentials needed
 pnpm run build    # -> dist/index.js
 ```
 
-Written and tested, **never deployed**. `backend/README.md` has the service
-layout, the configuration table, and the deployment sketch; what is still
-missing is infrastructure, not code — see [`STATUS.md`](STATUS.md) §4.
+The `api` service is deployed on the Vercel project `release-update-backend`.
+The poller and notifier are written for Cloud Run + Pub/Sub; deploying them there
+is an infrastructure step described in `backend/README.md`. See
+[`STATUS.md`](STATUS.md) for what is actually running.
 
 ---
 
@@ -233,8 +246,10 @@ first one is a deliberate manual step:
 2. In the Firebase console, create `admins/{that-uid}` with
    `{ email, seededAt }`.
 
-Thereafter admins are granted by the backend with the Admin SDK. There is no
-in-app path to self-promote, by design — see [`SECURITY.md`](SECURITY.md).
+Thereafter admins are granted and revoked from the console's **Users & Plans**
+tab, which calls `POST/DELETE /v1/admin/admins`; the API refuses to revoke the
+last admin or the caller's own membership. There is no in-app path to
+self-promote, by design — see [`SECURITY.md`](SECURITY.md).
 
 ---
 

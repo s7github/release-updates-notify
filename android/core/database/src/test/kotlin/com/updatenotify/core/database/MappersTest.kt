@@ -17,7 +17,7 @@ import org.junit.Test
  * Round-trip tests for the entity mappers.
  *
  * Two schemas mean two places to change, and a field added to one and forgotten
- * in the other is dropped silently with no error (docs/DATA_MODEL.md §10). These
+ * in the other is dropped silently with no error (docs/DATA_MODEL.md §11). These
  * tests are what turns that silent loss into a failing build.
  */
 class MappersTest {

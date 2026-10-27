@@ -4,7 +4,7 @@
 Kotlin models, and the backend's writes all follow it. When code and this file
 disagree, that is a bug — fix one of them in the same commit.
 
-Nine collections. Firestore is schemaless, which means the schema lives here or
+Ten collections. Firestore is schemaless, which means the schema lives here or
 it lives nowhere.
 
 **Conventions**
@@ -32,8 +32,10 @@ One document per account, keyed by Firebase Auth UID.
 | `createdAt` | ISO string | | Set once on first sign-in |
 | `settings` | map | ✓ | See below |
 | `fcmTokens` | string[] | ✓ | Device push tokens. Client appends; `notifier` prunes dead ones |
-| `subscriptionTier` | string | ✓ | User's subscription tier: FREE, PRO, ENTERPRISE |
-| `subscriptionExpiresAt` | ISO string? |  | Subscription expiration timestamp (null for free tier) |
+| `subscriptionTier` | string | | **Backend-owned.** FREE, PRO or ENTERPRISE. Created as FREE; changed only by an admin through the API |
+| `subscriptionExpiresAt` | ISO string? |  | `null` means no expiry. A past value behaves as FREE |
+| `subscriptionUpdatedAt` | ISO string | | When the plan last changed |
+| `subscriptionUpdatedBy` | string? | | UID of the admin who changed it |
 
 ### `settings`
 
@@ -245,7 +247,28 @@ Membership by document existence. Presence of `admins/{uid}` means admin.
 
 ---
 
-## 8. `user_subscriptions/{subId}`
+## 8. `admin_audit/{entryId}`
+
+Append-only record of privileged mutations, written by the `api` service. This
+is what makes "the admin can change anything" accountable.
+
+| Field | Type | Notes |
+|---|---|---|
+| `actorUid` | string | Verified Firebase UID |
+| `actorEmail` | string? | From the verified ID token, not a request header |
+| `action` | string | e.g. `user.tier`, `registry.update`, `release.delete` |
+| `targetType` | string | `user`, `software`, `release`, `task`, `admin`, `system` |
+| `targetId` | string | Document id or `all` |
+| `before` | map? | Values before the change |
+| `after` | map? | Values after the change |
+| `createdAt` | ISO string | |
+
+**Read: admin only. Write: never from a client, including an admin.** The API
+writes with the Admin SDK; a client-writable audit log is not an audit log.
+
+---
+
+## 9. `user_subscriptions/{subId}`
 
 Present in the inherited rules. **No writer and no reader exists in the
 codebase.** It appears to predate `interests` taking over the same job.
@@ -256,7 +279,7 @@ Documented here so the next person does not mistake it for a live collection.
 
 ---
 
-## 9. Required indexes
+## 10. Required indexes
 
 Defined in `firebase/firestore.indexes.json`. Firestore will happily run without
 them until the collection grows, then fail — so they are declared, not discovered.
@@ -268,11 +291,13 @@ them until the collection grows, then fail — so they are declared, not discove
 | `release_notes` | `softwareId ASC`, `releaseDate DESC` | Version timeline |
 | `release_notes` | `createdAt DESC` | Sync watermark |
 | `background_tasks` | `requestedBy ASC`, `createdAt DESC` | User's own task progress |
+| `background_tasks` | `softwareId ASC`, `type ASC`, `createdAt DESC` | History-scrape progress dialog |
 | `master_registry` | `active ASC`, `lastCheck ASC` | Scheduler picking what is due |
+| `admin_audit` | `createdAt DESC` | Admin console audit list |
 
 ---
 
-## 10. Firestore → Room
+## 11. Firestore → Room
 
 The Android client mirrors these into Room, which is what the UI actually reads
 ([ADR-0005](adr/0005-offline-first-room-cache.md)).

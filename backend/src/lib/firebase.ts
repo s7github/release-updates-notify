@@ -52,4 +52,5 @@ export const Collections = {
   BACKGROUND_TASKS: 'background_tasks',
   SYSTEM_LEARNINGS: 'system_learnings',
   ADMINS: 'admins',
+  ADMIN_AUDIT: 'admin_audit',
 } as const;

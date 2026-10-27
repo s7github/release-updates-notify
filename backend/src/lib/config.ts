@@ -47,10 +47,6 @@ export const config = {
   model: optional('GEMINI_MODEL', 'gemini-2.0-flash'),
 
   limits: {
-    /** Per-user discovery calls per hour. Discovery spends money. */
-    discoveryPerUserPerHour: Number(optional('LIMIT_DISCOVERY_PER_HOUR', '10')),
-    /** Per-user refresh enqueues per hour. */
-    refreshPerUserPerHour: Number(optional('LIMIT_REFRESH_PER_HOUR', '30')),
     /** FCM multicast cap. Not configurable by us — it is the API's limit. */
     fcmBatchSize: 500,
     /** Firestore `whereIn` cap. Also not ours. */

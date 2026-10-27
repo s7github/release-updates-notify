@@ -146,6 +146,17 @@ fun SoftwareDetailScreen(
                 )
 
                 else -> LazyColumn(contentPadding = PaddingValues(16.dp)) {
+                    if (state.timelineLimited) {
+                        item(key = "tier-note") {
+                            Text(
+                                text = "Free shows the latest ${state.releases.size} releases. " +
+                                    "Pro shows the full history.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 12.dp),
+                            )
+                        }
+                    }
                     items(state.releases, key = { it.id }) { release ->
                         TimelineEntry(release)
                     }

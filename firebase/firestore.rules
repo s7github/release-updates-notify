@@ -252,6 +252,18 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------------
+    // admin_audit — an append-only record of privileged operations
+    // ---------------------------------------------------------------------
+
+    match /admin_audit/{entryId} {
+      // Readable by admins so the console can show who changed what. Not
+      // writable by any client, including an admin: the api service writes
+      // these with the Admin SDK, which is what makes the log trustworthy.
+      allow get, list: if isAdmin();
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
     // Default deny — last, and absolute.
     //
     // Anything not matched above is denied. Collections added later get no

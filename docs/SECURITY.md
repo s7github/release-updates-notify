@@ -56,6 +56,7 @@ delays this; it does not prevent it.
 | `background_tasks` | own only | **none** |
 | `system_learnings` | admin only | **none** |
 | `admins` | signed-in (own role) | **none** |
+| `admin_audit` | admin only | **none** |
 | anything else | **none** | **none** |
 
 The backend writes with the Admin SDK, which bypasses rules entirely — so
@@ -81,7 +82,7 @@ throwaway Google account was sufficient.
 
 ## 4. What is tested
 
-`firebase/test/firestore.rules.test.js` — 31 cases, run in CI on every change to
+`firebase/test/firestore.rules.test.js` — 36 cases, run in CI on every change to
 `firebase/`.
 
 The deny suite is the **"Dirty Dozen"** from
@@ -105,9 +106,10 @@ these payloads; the inherited rules did not actually block several of them.
 
 Plus eight further denials (anonymous access, changing your own email or uid,
 reassigning an interest's owner, an interest claiming to be both software and
-topic, unbounded token lists, unknown collections) and eleven allow cases
-covering every operation the app performs — because rules that deny everything
-are easy and useless.
+topic, unbounded token lists, a non-admin reading the audit log, an admin
+forging an audit entry, unknown collections) and twelve allow cases covering
+every operation the app performs — because rules that deny everything are easy
+and useless.
 
 **Changing `firestore.rules` without updating these tests is not acceptable.**
 Untested security rules are guesses.
@@ -127,9 +129,22 @@ request.auth.token.email == "saurabh257@gmail.com"   // removed
 
 That is a credential in a world-readable file, it breaks when the address
 changes, and it cannot be revoked without a deploy. Membership as data can be
-granted and revoked as an operation.
+granted and revoked as an operation. The web console also no longer self-seeds
+an admin from a hardcoded email: it only reads `admins/{uid}` and lets the rules
+answer.
 
-Bootstrapping the first admin is a deliberate manual console step — see
+**All privileged writes go through the `api` service**, under `/v1/admin/*`:
+`requireAuth` verifies the ID token, then `requireAdmin` checks the `admins`
+document. The operations are registry create/edit/delete, source re-discovery,
+poll enqueue, poll-all, release verify/edit/delete/bulk-delete, task deletion,
+subscription-tier changes, and admin grant/revoke.
+
+Every mutation writes `admin_audit/{id}` with the verified actor UID, the
+action, the target, and before/after values. `admin_audit` is readable by admins
+and writable by no client — including an admin — because an audit log the
+audited party can edit is decoration.
+
+Bootstrapping the first admin is still a deliberate manual console step — see
 [`SETUP.md`](SETUP.md) §7. There is no in-app path to self-promote.
 
 ---
@@ -141,7 +156,8 @@ Recorded honestly. None is currently exploited; all are real.
 | Gap | Risk | Fix |
 |---|---|---|
 | **No Firebase App Check** | Any client, modified or scripted, can hit Firestore with a valid token | Add Play Integrity App Check. Defence in depth — rules are the control, this raises the cost of scripted abuse |
-| **No rate limiting on the `api` service** | Discovery spends Gemini money per call; a loop is a billing attack | Per-user quota in the `api` service before it ships. **Do this with the service, not after** |
+| **No global IP rate limiting** | The per-user hourly quotas protect Gemini spend, but a script creating many accounts can still spend across them | Add App Check plus a project-level budget alert; consider an upstream rate limiter |
+| **Free follow cap is client-enforced** | A modified client can create more than five interests; the tier's *visible data* and paid API operations are enforced server-side | Move interest create/update behind the API if the cap must be a hard boundary |
 | **Interest duplicates** | Old random-id documents let one user follow the same thing twice, doubling notifications | De-duplication pass; new writes already use deterministic ids |
 | **No account deletion path** | GDPR/CCPA erasure requests cannot be served | Backend endpoint deleting `users/{uid}`, their `interests`, and their tokens |
 | **`rawData` on release notes** | Stores 5 KB of scraped source text; low risk but it is untrusted third-party content kept indefinitely | Debug-only field. Consider a TTL policy |

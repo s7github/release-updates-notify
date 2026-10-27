@@ -1,5 +1,5 @@
 {
-  "//": "Firestore runs without these until a collection grows, then fails. Declared rather than discovered in production. See docs/DATA_MODEL.md section 9.",
+  "//": "Firestore runs without these until a collection grows, then fails. Declared rather than discovered in production. See docs/DATA_MODEL.md section 10.",
   "indexes": [
     {
       "//": "Library list: a person's follows, newest first.",
@@ -44,6 +44,24 @@
       "fields": [
         { "fieldPath": "active", "order": "ASCENDING" },
         { "fieldPath": "lastCheck", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "Admin console: who changed what, newest first.",
+      "collectionGroup": "admin_audit",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "History-scrape progress for one product.",
+      "collectionGroup": "background_tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "softwareId", "order": "ASCENDING" },
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     }
   ],

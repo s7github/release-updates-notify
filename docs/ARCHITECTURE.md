@@ -150,9 +150,15 @@ items do not stampede the scrapers), **retries with a dead-letter queue** (a
 flaky vendor site does not lose the job), and **decoupling** (deciding what to
 poll is not the same concern as polling it).
 
+The `api` service also hosts `/v1/admin/*`: authenticated admin operations for
+the catalogue, release notes, tasks, subscription tiers and admin membership.
+The console cannot write those collections directly; the API is the only writer,
+and every mutation lands in `admin_audit`. See
+[ADR-0012](adr/0012-subscription-entitlements-and-admin-api.md).
+
 ### 3.3 Firestore
 
-Nine collections. Full field-level schema in [`DATA_MODEL.md`](DATA_MODEL.md).
+Ten collections. Full field-level schema in [`DATA_MODEL.md`](DATA_MODEL.md).
 The security model — what the client may and may not write — is in
 [`SECURITY.md`](SECURITY.md) and enforced in `firebase/firestore.rules`.
 

@@ -39,9 +39,9 @@ before(async () => {
     projectId: 'updatenotify-test',
     firestore: {
       rules: fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8'),
-      // emulators:exec exports the real host:port; 8080 is only the fallback.
-      host: (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':')[0],
-      port: Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':')[1]),
+      // emulators:exec exports the real host:port; 8090 is only the fallback.
+      host: (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8090').split(':')[0],
+      port: Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8090').split(':')[1]),
     },
   });
 });
@@ -88,6 +88,10 @@ beforeEach(async () => {
       type: 'initial_poll', status: 'processing', softwareId: 'fl-studio',
       softwareName: 'FL Studio', progress: 40, message: 'Working',
       requestedBy: VICTIM,
+    });
+    await setDoc(doc(db, 'admin_audit', 'audit1'), {
+      actorUid: ADMIN, action: 'user.tier', targetType: 'user',
+      targetId: VICTIM, createdAt: new Date().toISOString(),
     });
   });
 });
@@ -239,6 +243,17 @@ describe('additional deny cases', () => {
     await assertFails(getDocs(collection(asUser(ATTACKER), 'system_learnings')));
   });
 
+  it('a non-admin cannot read the admin audit log', async () => {
+    await assertFails(getDocs(collection(asUser(ATTACKER), 'admin_audit')));
+  });
+
+  it('even an admin cannot forge an audit entry from a client', async () => {
+    await assertFails(setDoc(doc(asUser(ADMIN), 'admin_audit', 'forged'), {
+      actorUid: ADMIN, action: 'user.tier', targetType: 'user',
+      targetId: VICTIM, createdAt: new Date().toISOString(),
+    }));
+  });
+
   it('an unknown collection is denied by the default rule', async () => {
     await assertFails(setDoc(doc(asUser(ATTACKER), 'not_a_real_collection', 'x'), { a: 1 }));
   });
@@ -325,5 +340,6 @@ describe('allow cases the app depends on', () => {
   it('an admin reads any profile and the audit log', async () => {
     await assertSucceeds(getDoc(doc(asUser(ADMIN), 'users', VICTIM)));
     await assertSucceeds(getDocs(collection(asUser(ADMIN), 'system_learnings')));
+    await assertSucceeds(getDocs(collection(asUser(ADMIN), 'admin_audit')));
   });
 });

@@ -2,7 +2,34 @@ package com.updatenotify.core.model
 
 /** Subscription tier levels for the UpdateNotify service. */
 enum class SubscriptionTier {
-    FREE, PRO, ENTERPRISE
+    FREE, PRO, ENTERPRISE;
+
+    /**
+     * Product entitlements, mirrored from `backend/src/lib/entitlements.ts`.
+     * The backend is the enforcer for quotas and backfills; this copy shapes
+     * what the app shows and blocks before a request is made.
+     */
+    val maxTrackedItems: Int?
+        get() = when (this) {
+            FREE -> 5
+            PRO, ENTERPRISE -> null
+        }
+
+    val historyDays: Int?
+        get() = when (this) {
+            FREE -> 30
+            PRO, ENTERPRISE -> null
+        }
+
+    val timelineItems: Int
+        get() = when (this) {
+            FREE -> 5
+            PRO -> 500
+            ENTERPRISE -> 1_000
+        }
+
+    val canExport: Boolean get() = this != FREE
+    val canBackfillHistory: Boolean get() = this != FREE
 }
 
 /** The signed-in account and its notification preferences. */
@@ -15,7 +42,24 @@ data class User(
     val isAdmin: Boolean = false,
     val subscriptionTier: SubscriptionTier = SubscriptionTier.FREE,
     val subscriptionExpiresAt: Long? = null, // null for free tier
-)
+) {
+    /**
+     * A paid tier whose expiry has passed behaves as FREE. A missing expiry
+     * means no expiry. The server applies the same rule before spending money.
+     */
+    val effectiveTier: SubscriptionTier
+        get() = when {
+            subscriptionTier == SubscriptionTier.FREE -> SubscriptionTier.FREE
+            subscriptionExpiresAt == null -> subscriptionTier
+            subscriptionExpiresAt > System.currentTimeMillis() -> subscriptionTier
+            else -> SubscriptionTier.FREE
+        }
+
+    val maxTrackedItems: Int? get() = effectiveTier.maxTrackedItems
+    val timelineItems: Int get() = effectiveTier.timelineItems
+    val canExport: Boolean get() = effectiveTier.canExport
+    val canBackfillHistory: Boolean get() = effectiveTier.canBackfillHistory
+}
 
 /**
  * Per-category notification preferences.

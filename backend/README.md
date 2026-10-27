@@ -17,7 +17,7 @@ near-identical Dockerfiles would drift.
 
 | `SERVICE` | Trigger | Job |
 |---|---|---|
-| `api` | HTTPS + Firebase ID token | Discovery and refresh. Both only **enqueue**. |
+| `api` | HTTPS + Firebase ID token | Discovery, refresh, and `/v1/admin/*`. All mutations only **enqueue** or write through the Admin SDK. |
 | `poller` | Pub/Sub `poll-requests` | Fetch sources, extract, write, publish genuine updates |
 | `notifier` | Pub/Sub `release-published` | Resolve subscribers, apply preferences, send FCM, prune dead tokens |
 
@@ -38,7 +38,7 @@ Cloud Scheduler ─► poller /scheduler/sweep ─► Pub/Sub poll-requests ─�
 ```bash
 pnpm install
 pnpm run lint     # typechecks src and test
-pnpm test         # 40 tests, no network or emulator needed
+pnpm test         # 63 tests, no network or emulator needed
 pnpm run build
 
 SERVICE=api pnpm start
@@ -52,7 +52,8 @@ For anything touching Firestore, start the emulators from `firebase/`:
 
 ```bash
 cd ../firebase && pnpm run emulators
-export FIRESTORE_EMULATOR_HOST=localhost:8080
+export FIRESTORE_EMULATOR_HOST=localhost:8090
+export FIREBASE_AUTH_EMULATOR_HOST=localhost:9099
 ```
 
 ---
@@ -69,8 +70,10 @@ export FIRESTORE_EMULATOR_HOST=localhost:8080
 | `GITHUB_TOKEN` | no | Raises the rate limit from 60/hr to 5,000/hr. Wanted before the catalog grows |
 | `TOPIC_POLL_REQUESTS` | no | Defaults to `poll-requests` |
 | `TOPIC_RELEASE_PUBLISHED` | no | Defaults to `release-published` |
-| `LIMIT_DISCOVERY_PER_HOUR` | no | Per-user. Defaults to 10 |
-| `LIMIT_REFRESH_PER_HOUR` | no | Per-user. Defaults to 30 |
+
+Per-user quotas are tier-based (`src/lib/entitlements.ts`), not environment
+variables: FREE 5 discovery / 10 refresh per hour, PRO 25 / 60, ENTERPRISE
+100 / 300. Changing the limits is a product decision, not a deployment knob.
 
 Config is validated at startup, so a missing value crashes the container
 immediately rather than failing on the first request an hour later.
@@ -79,7 +82,9 @@ immediately rather than failing on the first request an hour later.
 
 ## Deployment sketch
 
-Not yet run against a real project — see [`../docs/STATUS.md`](../docs/STATUS.md).
+The `api` service runs on the Vercel project `release-update-backend`. The
+poller and notifier are written for Cloud Run + Pub/Sub and have **not** been
+run against a real project — see [`../docs/STATUS.md`](../docs/STATUS.md).
 
 ```bash
 PROJECT=your-project

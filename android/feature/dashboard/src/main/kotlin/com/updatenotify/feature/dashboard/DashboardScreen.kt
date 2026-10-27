@@ -77,16 +77,9 @@ fun DashboardScreen(
                     body = if (state.activeFilters.isNotEmpty()) {
                         "Try clearing a filter to see more."
                     } else when (subscriptionTier) {
-                        SubscriptionTier.FREE -> "Follow 3-5 software updates to get started. Free users see:\n" +
-                            "• 3 tracked software updates per day\n" +
-                            "• Basic notifications for major releases\n" +
-                            "• Access to all categories\n\n" +
-                            "Pro users get:\n" +
-                            "• Unlimited tracking\n" +
-                            "• Advanced notifications\n" +
-                            "• Priority support"
-                        SubscriptionTier.PRO -> "You have Pro! Track unlimited software, get detailed release notes, and receive priority notifications for major releases."
-                        SubscriptionTier.ENTERPRISE -> "Enterprise plan activated. You have access to all features including admin dashboard and custom integrations."
+                        SubscriptionTier.FREE -> "Track up to 5 software items or topics, see the last 30 days of releases, and get notified when something ships."
+                        SubscriptionTier.PRO -> "Track unlimited software, see the full release history, export your data, and request deep history backfills."
+                        SubscriptionTier.ENTERPRISE -> "Everything in Pro, with higher refresh and discovery limits and priority support."
                     },
                     actionLabel = if (state.activeFilters.isEmpty()) {
                         "Browse Software"

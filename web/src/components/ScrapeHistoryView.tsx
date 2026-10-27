@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import { collection, query, where, orderBy, limit, onSnapshot } from "firebase/firestore";
 import { db } from "../services/firebase";
-import { pollSoftwareHistory } from "../services/pollService";
-import { createTask, BackgroundTask } from "../services/taskService";
+import { adminApi, ApiError } from "../services/api";
+import type { BackgroundTask } from "../types/task";
 import { motion, AnimatePresence } from "motion/react";
 import toast from "react-hot-toast";
 
@@ -54,26 +54,16 @@ export default function ScrapeHistoryView({ software, onClose }: ScrapeHistoryVi
 
   const handleStartScrape = async () => {
     setIsStarting(true);
-    const toastId = toast.loading("Initializing global history scrape...");
+    const toastId = toast.loading("Queueing history scrape...");
     try {
-      // 1. Create Task
-      const taskId = await createTask('history_scrape', software.id, software.name);
-      
-      // 2. Trigger Scrape (Don't await, it runs in background)
-      // We pass the updated software object with limits
-      const updatedSoftware = {
-        ...software,
+      await adminApi.pollRegistry(software.id, {
+        includeHistory: true,
         historyMaxCount: maxCount,
-        historyMinDate: minDate
-      };
-      
-      pollSoftwareHistory(updatedSoftware, taskId).catch(err => {
-         console.error("Background scrape failed:", err);
+        ...(minDate ? { historyMinDate: minDate } : {}),
       });
-      
-      toast.success("Scrape started in background", { id: toastId });
+      toast.success("History scrape queued — progress appears here live", { id: toastId });
     } catch (err: any) {
-      toast.error("Failed to start scrape: " + err.message, { id: toastId });
+      toast.error(err instanceof ApiError ? err.message : "Failed to start scrape", { id: toastId });
     } finally {
       setIsStarting(false);
     }

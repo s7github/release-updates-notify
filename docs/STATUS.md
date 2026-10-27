@@ -1,7 +1,7 @@
 # Project Status
 
 **Last updated:** 2026-10-27
-**Updated by:** the native Android conversion session, then a Windows verification run
+**Updated by:** the subscription/admin/real-time pass
 
 > **If you are an agent or a person picking this up cold, this is the file that
 > tells you where things actually stand.** Read it before planning anything, and
@@ -15,561 +15,244 @@
 
 ## 1. One-paragraph summary
 
-The React PWA has been restructured into a monorepo, and three things now exist
-and are verified: a **native Android client** that compiles, lints and tests
-clean into a real debug APK; **hardened Firestore rules** with a passing 31-case
-test suite; and a **backend pipeline** (poller, notifier, api) that typechecks,
-passes 38 tests, builds and boots.
+The repository contains a native Android client (Kotlin + Compose), a web
+operator console (React), three backend services (poller, notifier, api), and
+hardened Firestore rules. All of it builds and its tests pass locally.
 
-**Nothing has been deployed, and the app has never run on a device.** The
-pipeline needs a Google Cloud project, a secret, Pub/Sub topics and a scheduler
-before any of it is real — all infrastructure, no remaining code. Until then the
-dashboard is empty, because nothing is writing `release_notes`.
+**The release pipeline is still not deployed to Cloud Run / Pub/Sub, and the app
+has never run on a device.** The web app and the `api` service are deployed on
+Vercel; the deployed builds predate the changes in this working tree. Until the
+poller and notifier run somewhere with a service account and a scheduler,
+nothing writes `release_notes` on a schedule, so the dashboard has only whatever
+data already exists in Firestore.
 
-**This status update reflects the research and analysis phase, which identifies the key gaps and planned improvements to move toward deployment and production readiness. The foundation is now complete, and implementation begins immediately.**
-
-## 1.0. Subscription-tier UI fix (2026-10-27)
-
-Commit f294d47 ("subscription tiers") only touched Android, so the web app (the
-UI you actually run) never showed it, and the Android part did not compile
-(`:feature:dashboard` imported `MainViewModel` from `:app`). Fixed:
-
-- **Web:** `App.tsx` exposes `tier` (read-only, from `users/{uid}`), `Landing`
-  shows the three plans, `Dashboard` shows the plan and tier-aware empty state.
-- **Android:** tier now flows `AuthRepository` -> `DashboardViewModel` ->
-  `DashboardUiState`; literal `\n` on the landing screen fixed; filtered-empty
-  copy restored.
-- **Firestore rules:** the commit added an `allow update` that let a user write
-  their own `subscriptionTier` (self-upgrade). Removed; create now only accepts
-  `FREE`. Tier is backend-only (Admin SDK).
-
-**Android persistence (follow-up, same day):** `subscriptionTier` /
-`subscriptionExpiresAt` are read from Firestore (`DocumentMappers.toUser`), stored
-in Room (DB v2, `MIGRATION_1_2`, schema `2.json` committed) and mapped to `User`.
-Unknown or missing tier falls back to FREE. Rules suite now 34 passing, including
-3 tier cases; the test reads `FIRESTORE_EMULATOR_HOST` so it can run when 8080 is
-taken (Docker holds it on the dev machine).
-
-**Not verified:** the 1->2 migration is not exercised by an instrumented
-migration test (compiled and schema-exported only); nothing has run on a device;
-no backend code sets `subscriptionTier` yet, so every account is FREE.
-
-## 1.1. Current Status: Research Phase Complete, Implementation Underway
-
-**Status:** Research and analysis phase completed. Implementation of critical fixes has begun.
-
-**Key Achievements Completed:**
-
-### ✅ Research Repository Created
-- Complete `release-updates-notify-brain/` repository with comprehensive documentation
-- All research findings, analysis, and decisions documented
-- Implementation roadmaps and guides prepared
-
-### ✅ Critical Gaps Identified and Documented
-- **Gap 1:** Backend pipeline deployment (GCP project, secrets, Pub/Sub, scheduler)
-- **Gap 2:** Mobile app device testing (google-services.json, release signing)
-- **Gap 3:** Paid subscription model (pricing strategy, payment integration)
-- **Gap 4:** Source reliability improvements (caching, rate limiting, health monitoring)
-- **Gap 5:** Category expansion (additional software categories)
-
-### ✅ Implementation Plan Established
-- **Phase 1 (Months 1-3):** Foundation fixes (completed)
-- **Phase 2 (Months 4-8):** Advanced features (in progress)
-- **Phase 3 (Months 9-12):** Scale and optimize (planned)
-
-## 1.2. Current Implementation Status
-
-### ✅ COMPLETED: Research Documentation
-1. **Research Repository Created**
-   - `release-updates-notify-brain/` repository with complete structure
-   - All research findings documented in 01_research/
-   - Market analysis and competitive research completed
-
-2. **Analysis Completed**
-   - All technical gaps identified and documented
-   - Architecture decisions analyzed and documented
-   - Implementation requirements specified
-
-3. **Decision Records**
-   - All source improvement decisions documented
-   - Technical trade-offs analyzed
-   - Implementation rationales provided
-
-### 🔄 IN PROGRESS: Critical Fixes Implementation
-
-#### **Priority 1: Backend Pipeline Deployment** (Weeks 1-3)
-**Status:** Currently being implemented
-
-**Current Progress:**
-1. **GCP Project Setup**
-   - Creating Google Cloud project with billing
-   - Enabling required APIs (Cloud Run, Secret Manager, Pub/Sub, Cloud Scheduler)
-   - Configuring IAM roles and permissions
-
-2. **Infrastructure Setup**
-   - Secret Manager entries for Gemini API key
-   - Pub/Sub topics and subscriptions
-   - Cloud Scheduler job configuration
-   - Monitoring and logging setup
-
-3. **Backend Deployment**
-   - Building and deploying Docker containers
-   - Configuring environment variables
-   - Testing health checks and monitoring
-
-#### **Priority 2: Mobile App Testing Setup** (Weeks 1-3)
-**Status:** Currently being implemented
-
-**Current Progress:**
-1. **Firebase Configuration**
-   - Creating Firebase project for Android app
-   - Enabling required services (Auth, Firestore, FCM)
-   - Generating `google-services.json`
-
-2. **Android Configuration**
-   - Setting up release signing for production builds
-   - Configuring emulator testing environment
-   - Adding Firebase App Check
-
-3. **Testing**
-   - Building debug APK with `./gradlew assembleDebug`
-   - Running app on emulator
-   - Testing basic functionality
-
-#### **Priority 3: Verification Script Fix** (Week 1)
-**Status:** Currently being implemented
-
-**Current Progress:**
-1. **Platform Detection**
-   - Adding Windows/Linux/macOS detection
-   - Configuring environment variables for each platform
-   - Handling path differences
-
-2. **Error Handling**
-   - Adding comprehensive error handling
-   - Improving error messages and logging
-   - Adding retry mechanisms
-
-#### **Priority 4: Source Reliability Improvements** (Weeks 4-8)
-**Status:** Planned for Phase 2
-
-**Implementation Tasks:**
-1. **Intelligent Caching Layer**
-   - Content hashing for change detection
-   - HTTP cache header handling (ETag, Last-Modified)
-   - Smart TTL based on source type
-   - Integration with existing polling system
-
-2. **Package Registry APIs**
-   - npm registry integration
-   - PyPI registry integration
-   - Maven registry integration
-   - Version extraction for registry formats
-
-3. **Rate Limit Management**
-   - Token rotation for GitHub API
-   - Intelligent throttling per source type
-   - Fallback mechanisms when limits hit
-   - Usage monitoring and alerting
-
-#### **Priority 5: Paid Subscription Model** (Weeks 12-16)
-**Status:** Planned for Phase 3
-
-**Implementation Tasks:**
-1. **Pricing Strategy**
-   - Define Free, Pro ($4.99/month), Enterprise ($49.99/month) tiers
-   - Premium feature differentiation
-   - Subscription lifecycle management
-
-2. **Payment Integration**
-   - Stripe integration for payments
-   - Subscription lifecycle management
-   - Invoice generation
-   - Payment method management
-
-## 1.3. Immediate Action Items
-
-### **This Week (Week 1)**
-1. **Backend Deployment**
-   - Complete GCP project setup
-   - Configure Secret Manager and Pub/Sub
-   - Deploy backend services
-   - Test end-to-end pipeline
-
-2. **Mobile Testing Setup**
-   - Create Firebase project
-   - Generate `google-services.json`
-   - Configure Android emulator
-   - Test app functionality
-
-3. **Verification Script**
-   - Add platform detection
-   - Fix path handling
-   - Add error handling
-   - Test cross-platform compatibility
-
-### **Next 2 Weeks (Weeks 2-3)**
-1. **Backend Completion**
-   - Deploy all three backend services (poller, notifier, api)
-   - Configure monitoring and logging
-   - Test health checks
-   - Validate pipeline functionality
-
-2. **Mobile Testing Completion**
-   - Setup release signing
-   - Add Firebase App Check
-   - Test app on device/emulator
-   - Validate notification delivery
-
-3. **Documentation Updates**
-   - Update STATUS.md with current progress
-   - Document implementation decisions
-   - Create verification procedures
-
-### **Week 4**
-1. **Source Reliability Improvements**
-   - Start implementing caching layer
-   - Begin package registry integration
-   - Setup rate limit management
-   - Add source health monitoring
-
-2. **Testing**
-   - Run verification scripts
-   - Test implementation quality
-   - Validate functionality
-
-## 1.4. Success Metrics & Verification
-
-### **Technical Metrics**
-- ✅ **Repository Completeness:** 100% of required files present
-- ✅ **Documentation Quality:** 90%+ accuracy and completeness
-- ✅ **Implementation Progress:** All critical fixes in progress
-- ✅ **Quality Standards:** Documentation meets project standards
-
-### **Project Milestones**
-- ✅ **Week 1:** Research repository complete
-- ✅ **Week 3:** Backend deployment completed
-- ✅ **Week 3:** Mobile testing setup completed
-- ✅ **Week 4:** Source reliability improvements started
-- ✅ **Week 8:** Advanced features implementation underway
-
-### **Verification Checklist**
-```bash
-# Repository verification
-ls -la release-updates-notify-brain/
-find release-updates-notify-brain/01_research -name "*.md" | wc -l
-find release-updates-notify-brain/02_analysis -name "*.md" | wc -l
-find release-updates-notify-brain/03_decisions -name "*.md" | wc -l
-
-# Status verification
-cat docs/STATUS.md | grep -c "Current Status"
-```
-
-## 1.5. Next Steps
-
-### **Immediate**
-1. **Deploy Backend Pipeline**
-   - Follow `backend/README.md` deployment instructions
-   - Configure environment variables
-   - Deploy all three Cloud Run services
-   - Test end-to-end functionality
-
-2. **Complete Mobile Testing**
-   - Setup Firebase project
-   - Generate `google-services.json`
-   - Configure release signing
-   - Test app on device/emulator
-
-3. **Fix Verification Script**
-   - Add platform detection
-   - Fix Windows path handling
-   - Add comprehensive error handling
-   - Test cross-platform compatibility
-
-### **Short-term**
-1. **Implement Caching**
-   - Start intelligent caching layer
-   - Implement content hashing
-   - Add HTTP cache header support
-   - Integrate with polling system
-
-2. **Add Package Registries**
-   - Integrate npm registry
-   - Integrate PyPI registry
-   - Integrate Maven registry
-   - Add version extraction
-
-3. **Setup Rate Limiting**
-   - Implement token rotation
-   - Add intelligent throttling
-   - Configure fallback mechanisms
-   - Setup usage monitoring
-
-### **Long-term**
-1. **Scale and Optimize**
-   - Complete advanced features
-   - Add enterprise capabilities
-   - Global expansion
-   - Performance optimization
-
-## 1.6. Project Status Summary
-
-| Phase | Status | Timeline | Progress |
-|-------|--------|----------|----------|
-| Research | ✅ Complete | Week 1 | 100% |
-| Foundation | 🔄 In Progress | Week 1-3 | 60% |
-| Source Improvements | 🔄 Starting | Week 4 | 10% |
-| Enterprise Features | 🔄 Planned | Week 12-16 | 0% |
-| Global Expansion | 🔄 Planned | Week 12-48 | 0% |
-
-### **Key Achievements**
-- ✅ Comprehensive research repository created
-- ✅ All technical gaps identified and documented
-- ✅ Detailed implementation roadmap established
-- ✅ Critical fixes in progress (backend deployment, mobile testing)
-- ✅ Quality standards and verification procedures established
-
-### **Immediate Impact**
-- **Backend Pipeline:** Ready for deployment and production use
-- **Mobile Testing:** App ready for device testing
-- **Documentation:** Complete research and implementation guides
-- **Quality:** High-quality documentation meeting project standards
-
-**The UpdateNotify project is now ready to move from research to implementation, with critical infrastructure fixes in progress and a clear roadmap for delivering a production-ready software release tracking platform with paid subscription capabilities.**
+This pass made subscription tiers real on the read path, moved every privileged
+console write into an authenticated admin API, added an audit log, made the feed
+listen to the user's own library instead of a global 200-row slice, and removed
+the browser's Gemini client and open proxy. Details below.
 
 ---
 
-## 1.7. Vercel deployment fixes (2026-10-27)
+## 2. What changed in this pass (2026-10-27)
 
-- `web` (project `release-updates`, root dir `web/`): added `web/vercel.json` (SPA rewrite so react-router deep links work) and `web/api/proxy.ts` + `web/api/health.ts`. The `/api/proxy` handler moved to `web/lib/proxyHandler.ts`, shared with `server.ts`. Before, `/api/proxy` only existed in the local Express server, so every poll failed on Vercel.
-- `backend` (project `release-update-backend`, container build): the deploy failed on `pnpm install --frozen-lockfile` because `backend/pnpm-lock.yaml` lacked `@sentry/node` / `@sentry/types`. Lockfile regenerated.
-- Open: Vercel SSO protection is on for both projects (visitors hit a login wall); `GEMINI_API_KEY` is baked into the web bundle (violates the server-side-AI rule); `/api/proxy` is an open proxy; untracked `backend/src/test/sentry.test.ts` has a stray Python docstring and breaks `tsc`. ADR-0003 targets Cloud Run, not Vercel, for the backend.
+### 2.1 Subscription entitlements are now enforced
 
-## 1.8. Real-time data on Vercel (2026-10-27)
+- Added `backend/src/lib/entitlements.ts` (authoritative) and
+  `web/src/services/entitlements.ts` (mirror for UI/query shaping). Numbers and
+  the reasoning are in [ADR-0012](adr/0012-subscription-entitlements-and-admin-api.md).
+- **FREE:** 5 tracked items, 30-day visible history, latest 5 timeline rows, no
+  export, no history backfill, 5 discovery / 10 refresh per hour.
+- **PRO:** unlimited tracking and history, 500 timeline rows, export, backfill,
+  25 discovery / 60 refresh per hour.
+- **ENTERPRISE:** unlimited, 1,000 timeline rows, 100 discovery / 300 refresh per
+  hour.
+- Expired paid tiers behave as FREE. A missing `subscriptionExpiresAt` means no
+  expiry; an unparseable one fails closed.
+- `/v1/refresh` now returns `403 UPGRADE_REQUIRED` for `includeHistory` when the
+  caller lacks backfill. `/v1/me` returns the caller's effective tier and limits.
+- The web dashboard clamps its window to the tier; the software timeline query
+  is `limit(tier.timelineItems)`; export is gated; the free follow cap is shown
+  and blocked in the add flow and the topic form.
+- **Android now mirrors the same rules:** `SubscriptionTier` exposes the limits,
+  `InterestRepositoryImpl` refuses a sixth item on FREE, and
+  `SoftwareDetailViewModel` trims the timeline to the tier and tells the user
+  why. `DashboardScreen`'s copy was corrected — it previously promised things
+  the product does not do ("3 tracked updates per day", admin dashboard on
+  Enterprise).
+- **Not hard-enforced:** the 5-item follow cap. Interests are still written
+  directly by the client, as ADR-0006 allows, so a modified client can create
+  more. Visible data and paid API operations are server-enforced. This is in
+  `SECURITY.md` §6 as a known gap, not a hidden one.
 
-- The Vercel dashboard is real-time in transport (Firestore `onSnapshot` on `release_notes`), but nothing writes `release_notes` on a schedule, so it only shows what a browser-triggered poll once wrote. Client writes are denied by the repo's rules, so that path is dead too. `release-updates-notify-brain` is research markdown only, not release data.
-- Chosen fix: deploy the backend poller to Cloud Run per ADR-0003. Added `backend/scripts/deploy-gcp.ps1` (APIs, service account, secret, topics, image, three services, OIDC push subscriptions, hourly scheduler sweep) and a launcher for it. **Not yet run** — needs a GCP project with billing and the Gemini key.
-- Fixed `backend/src/test/sentry.test.ts` (Python docstring broke `tsc`; assertions targeted non-mocks). Backend lint clean, 40 tests pass.
-- Open, owner action: Vercel Deployment Protection (SSO) on project `release-updates` must be turned off for Production, and the Vercel domain added to Firebase Auth authorized domains. Not done by an agent: both are security settings.
-- Open: after the first sweep, confirm `release_notes` fills and the dashboard updates live; the deployed Firestore rules must match `firebase/firestore.rules`.
+### 2.2 The admin console writes through the API
 
-## 2. Verified working
+- Added `backend/src/routes/admin.ts`, mounted at `/v1/admin/*` behind
+  `requireAuth` + `requireAdmin`. It owns registry create/edit/delete, source
+  re-discovery, poll enqueue, poll-all, release verify/edit/delete/bulk-delete,
+  task deletion, tier/expiry changes, admin grant/revoke, and an overview count.
+- Catalogue deletion requires `confirmName` to match exactly; releases and
+  interests are deleted in bounded batches; `lastVersion` is recomputed from the
+  newest surviving note.
+- Unknown fields are rejected, not dropped (`backend/src/lib/adminValidation.ts`,
+  23 unit tests).
+- Every mutation writes `admin_audit/{id}` with the verified UID, token email,
+  action, target and before/after values. Admins read it; no client writes it.
+- Rewired the web console: `RegistryManager`, `SoftwareDetails`,
+  `ScrapeHistoryView`, `Processing`, `LearningInsights`, and `AddSoftware` no
+  longer write privileged collections or call Gemini. `UserInsights` is now
+  **Users & Plans**: live accounts, tier/expiry editing, admin grant/revoke.
+  Added an **Audit Log** tab.
+- Removed the hardcoded personal-email admin bootstrap from `App.tsx`.
+  `isAdmin` is now a live `onSnapshot` on `admins/{uid}`.
+- The old admin "full sync" was a client discovery + client poll. It is now
+  `discoverRegistry` followed by `pollRegistry` on the API; "scan all" is one
+  server-side endpoint.
+- The old browser `@google/genai` client, `pollService`, `taskService`, and the
+  unauthenticated `/api/proxy` handler are now tombstones/removed code. The
+  web bundle no longer gets a `GEMINI_API_KEY` define. Dependencies
+  `@google/genai`, `axios`, `cheerio`, `rss-parser`, `firebase-admin` and
+  `dotenv` were removed from `web/package.json`.
 
-Everything here was actually run, not assumed.
+### 2.3 The feed is real-time and scoped to the user
+
+- The dashboard used to listen to the 200 newest release notes in the entire
+  database, then filter them in memory. A busy catalog could push a user's own
+  releases out of the window. It now subscribes per `softwareId` chunk (10 at a
+  time), merges and de-duplicates, and shows a LIVE/CACHED/IDLE chip based on
+  snapshot `fromCache` metadata.
+- One card per product on the dashboard; the full timeline stays on the detail
+  page.
+- Library export batches `where in` queries instead of silently exporting only
+  the first 10 products.
+- New follows and topics use deterministic ids, so following the same thing twice
+  is an overwrite rather than a duplicate notification.
+- Added a `LIVE` pill, plan label, last-updated time, and tier-aware empty states.
+
+### 2.4 Login
+
+- Google sign-in keeps the popup path and falls back to a full-page redirect when
+  the popup is blocked or unsupported; `getRedirectResult` is completed on load.
+- Sign-in failures now produce readable messages (`auth/unauthorized-domain`,
+  network, too many requests) instead of an unhandled promise.
+- Admin identity is never inferred from an email address. First-admin bootstrap is
+  still the documented manual console step (`docs/SETUP.md` §7).
+
+---
+
+## 3. Verified working
+
+Everything here was actually run on 2026-10-27, in this working tree.
 
 | What | Evidence |
 |---|---|
-| Android app assembles | `./gradlew assembleDebug` → 28 MB `app-debug.apk`, package `com.updatenotify.debug`, compileSdk 37, targetSdk 36 |
-| Android lint passes | `./gradlew lintDebug` clean, `abortOnError = true`, no baseline file |
-| Unit tests pass | 34 tests, 0 failures, across `:core:model`, `:core:common`, `:core:database` |
-| Build is warning-free | No warnings from project sources. One unavoidable AGP notice about the Kotlin plugin remains — see ADR-0010 |
-| Firestore rules pass | 31 cases against the emulator, 0 failures — 12 deny (the "Dirty Dozen"), 8 further deny, 11 allow |
-| Toolchain resolves | AGP 9.4.0, Gradle 9.7.1, Kotlin 2.3.21, KSP 2.3.11, Hilt 2.60.1 |
-| Backend typechecks and tests | `pnpm run lint` clean; 40 tests, 0 failures |
-| Backend builds and boots | `pnpm run build` → `dist/index.js`; all three services answer `/healthz`; an unknown `SERVICE` exits 1 |
-| **Verified on Windows too** | Windows 11, JDK 21 (Studio JBR), Node 25, Europe/Amsterdam. Android: APK + 34 tests + lint clean (0 errors). Backend: lint + 40 tests + build. Rules: 31 tests. All green. |
-| One-command verification | `.\verify.ps1` runs all three suites, sets `JAVA_HOME`/`ANDROID_HOME`, exits non-zero on failure |
+| Backend typecheck | `cd backend && pnpm run lint` clean |
+| Backend unit tests | **63 tests, 0 failures** (19 suites), including 23 new admin-validation/entitlement tests |
+| Backend build | `pnpm run build` → `dist/index.js` |
+| Android assemble | `cd android && .\gradlew.bat assembleDebug` → debug APK |
+| Android lint | `.\gradlew.bat lintDebug` clean |
+| Android unit tests | **42 tests, 0 failures** across model/data/database/features |
+| Web typecheck | `cd web && pnpm run lint` clean |
+| Web production build | `pnpm run build` succeeds; route-level `React.lazy` splits the dense pages |
+| Firestore rules | **36 tests, 0 failures** against the emulator on port 8090 |
+| Admin API smoke test | Local `api` against Firestore + Auth emulators: `/v1/me` returned FREE; admin `PATCH /v1/admin/users/:uid` set PRO and `/v1/me` reflected it; a non-admin call to the same route returned **403**; registry PATCH and DELETE returned the expected counts; 3 `admin_audit` entries were written |
+| Tier gate smoke test | FREE user `POST /v1/refresh {includeHistory:true}` returned **403**; `/v1/me` reported `historyDays: 30`, `maxTrackedItems: 5` |
+| Live web host | `https://release-updates-psi.vercel.app/` returned the app HTML (landing page renders) |
+| Live API host | `https://release-update-backend.vercel.app/healthz` → `{"status":"ok","service":"api"}` |
 
-**Not verified:** the app has never been run on a device or emulator. It compiles
-and its logic is unit-tested; whether the screens actually render correctly is
-unknown. Nothing has been deployed anywhere.
+**Not verified:**
 
-### What the Windows run found
-
-Everything below was green on Linux and broken on Windows. Worth knowing that
-CI (Ubuntu, UTC) cannot catch this class of problem on its own.
-
-| Problem | Fix |
-|---|---|
-| Date-only values parsed as **local** midnight, so a March 9 changelog entry stored as March 8 anywhere east of UTC. The Kotlin client already did this correctly, so the two implementations disagreed. | `backend/src/lib/dates.ts`; both parse sites use it; tests assert exact UTC instants |
-| `pnpm run test:rules` could not run at all — single quotes are not argument grouping in `cmd.exe`, so `--test` leaked into `firebase`'s own argv | double quotes in `firebase/package.json` |
-| `lintDebug` could not pass while `local.properties` exists — `PropertyEscape` is unsatisfiable on Windows | check disabled in the convention plugin, with the reasoning inline |
-| `local.properties` with pasted Windows backslashes mangles into an invalid path (backslash is a `.properties` escape) | documented in `SETUP.md` §2 |
-| **Phantom dependency**: `scraper.ts` imported `domhandler` without declaring it, working only via npm's flat hoisting. Surfaced the moment pnpm's strict linking was applied. | declared and pinned to match cheerio (ADR-0011) |
-
-### Lint findings — fixed
-
-Down from 14 warnings to 11, and every remaining one is a dependency-version
-notice (`NewerVersionAvailable`, `GradleDependency`) or the deliberate
-`targetSdk 36` (`OldTargetApi`, see ADR-0010). **Nothing actionable remains in
-the code.**
-
-One of these turned out to be a real bug rather than a style nit:
-
-| Was | Fixed |
-|---|---|
-| `InlinedApi` on `POST_NOTIFICATIONS` — **`checkSelfPermission()` returns DENIED for a permission the platform does not define, so every notification was silently dropped on API 26–32**, most of the supported range | `NotificationManagerCompat.areNotificationsEnabled()`, correct on all versions and also respects notifications being switched off in settings |
-| `CredentialManagerMisuse` — `NoCredentialException` unhandled | Sign-in now distinguishes no-account, user-dismissed (no error shown at all), and provider failure; also stops `runCatching` swallowing coroutine cancellation, and checks the credential type before reading it |
-| `MissingPermission` on `notify()` (surfaced by the fix above) | `SecurityException` handled — permission can be revoked between check and call |
-| `ObsoleteSdkInt` — `mipmap-anydpi-v26` redundant at `minSdk` 26 | merged into `mipmap-anydpi` |
+- The **deployed** web/API builds do not contain this pass. Nothing was committed
+  or deployed. The live admin routes will 404 until `backend` is redeployed, and
+  the new console will not be live until `web` is redeployed.
+- No backend HTTP route is covered by the automated test suite. The smoke test
+  above was manual; Firestore/Admin SDK interactions still need integration tests
+  in CI.
+- The Android tier gates compile and their entitlement tests pass, but the app
+  has still never run on a device. Whether the note renders correctly in the
+  Compose timeline is unverified.
+- The pipeline still has not been deployed to Cloud Run, so no scheduled data is
+  being produced.
 
 ---
 
-## 3. Done
+## 4. Done before this pass (still true)
 
-### Documentation and process
-- [x] Monorepo layout — `docs/ android/ backend/ firebase/ web/`
-- [x] `CLAUDE.md` and `AGENTS.md` agent entry points
-- [x] `ARCHITECTURE.md` — target system, module graph, pipeline, known weaknesses
-- [x] `DATA_MODEL.md` — normative schema for all nine Firestore collections
-- [x] ADRs 0001–0010, append-only, each with rejected alternatives and costs
-- [x] CI: four path-filtered workflows (Android, backend, Firestore rules, web)
-
-### Android client
-- [x] 15-module graph with convention plugins; features cannot depend on features
-- [x] Domain layer as pure Kotlin — no Android dependency
-- [x] Room schema, DAOs, mappers; the feed is a SQL join Firestore cannot express
-- [x] Firestore data sources with total mappers (a bad document is skipped, never thrown)
-- [x] Repository layer behind domain interfaces, Hilt-bound
-- [x] Incremental sync against a stored watermark
-- [x] Design system carrying the web app's identity, plus a derived light theme
-- [x] Five feature modules: auth, dashboard, library, software detail, settings
-- [x] Google Sign-In via Credential Manager
-- [x] Navigation host, FCM service, per-category notification channels
-
-### Firebase
-- [x] Rules rewritten to a read-mostly client; client write access to
-      `master_registry`, `release_notes` and `background_tasks` removed
-- [x] Hardcoded admin email removed; membership is document existence
-- [x] Five composite indexes declared, including the fan-out `softwareId` index
-- [x] Emulator config and a rules test suite wired into CI
-
-### Backend
-- [x] Three Cloud Run services from one image, selected by `SERVICE`
-- [x] Source aggregation ported from `web/server.ts`, extraction prompts ported
-      verbatim from `web/src/services/gemini.ts` — they are tuned, and rewriting
-      them would regress quality invisibly
-- [x] The genuine-update gate, which the web app had no need for and which is the
-      single most important check in the pipeline
-- [x] Model output re-validated before it is trusted (dates rejected as versions,
-      off-list categories defaulted, unparseable dates nulled rather than invented)
-- [x] Server-side notification preference filtering, FCM batching, dead-token pruning
-- [x] Firestore-backed per-user rate limits, because discovery spends money
-- [x] Pub/Sub OIDC verification, structured Cloud Logging, graceful SIGTERM draining
+- Monorepo layout, `CLAUDE.md`/`AGENTS.md`, ADR-0001…0011, CI workflows.
+- 15-module Android graph; compiles to a debug APK; lint clean; 34 unit tests.
+- Room schema v2 with tier/expiry; Firestore mappers; offline-first repositories.
+- Firestore rules: read-mostly client, default deny, 34→36 emulator cases.
+- Backend: three services from one image, genuine-update gate, FCM fan-out,
+  Pub/Sub OIDC verification, Firestore-backed per-user quotas.
+- Web: landing, dashboard, library, software detail, processing, admin; Vercel
+  deployment and SPA rewrite.
 
 ---
 
-## 4. Not done — and what it blocks
+## 5. Not done — and what it blocks
 
-### The backend pipeline — **written, never deployed**
+### The release pipeline is still undeployed
 
-All three services exist, typecheck, pass 38 tests, build, and boot. **None has
-ever run against a real Google Cloud project**, so treat the whole thing as
-unproven in production.
+The poller/notifier need a Google Cloud project with billing, Secret Manager, two
+Pub/Sub topics (plus dead-letter), a Cloud Scheduler sweep, and a first deploy.
+The code exists; none of it has run against a real project. Until then
+`release_notes` is only as fresh as whatever is already in Firestore. The new
+console can enqueue polls, but with the deployed API (which predates this pass)
+the admin routes do not exist yet.
 
-Written:
-- `poller` — source aggregation, Gemini extraction, the genuine-update gate,
-  self-correcting metadata, history backfill, scheduler sweep
-- `notifier` — subscriber resolution, server-side preference filtering, FCM
-  multicast in 500s, dead-token pruning
-- `api` — authenticated discovery and refresh, both enqueue-only, with
-  Firestore-backed per-user hourly quotas
-- Dockerfile (one image, three services), structured Cloud Logging, graceful
-  SIGTERM draining
+This is the single biggest gap against "data is live and real-time".
 
-Still missing, and all of it is infrastructure rather than code:
+### Deployment state
 
-| Missing | Blocks |
-|---|---|
-| A Google Cloud project with billing | Everything below |
-| Secret Manager entry for the Gemini key | The poller and api running |
-| Pub/Sub topics, push subscriptions, dead-letter queues | The pipeline connecting |
-| Cloud Scheduler job | Anything happening unattended |
-| A first deploy | Any of it being real |
+- `web` and `release-update-backend` are Vercel projects. The API is running the
+  pre-pass code. `VITE_API_URL` should be set on the web project to the API host;
+  the code falls back to `https://release-update-backend.vercel.app`.
+- Vercel Deployment Protection / Firebase Auth authorized domains were an open
+  owner action in the previous status. The landing page is publicly reachable
+  now; confirm the Vercel domain is in Firebase Auth's authorized domains before
+  claiming sign-in is verified in production. It was not tested with a real
+  Google account here.
 
-`backend/README.md` has the deployment sketch. **Until it is deployed the
-Android app shows an empty dashboard**, because nothing is writing
-`release_notes`.
+### Admin/API follow-ups
 
-### Android gaps
+- [ ] Deploy `backend` and `web`, in that order, then re-run the admin smoke test
+      against the live host.
+- [ ] Deploy the new `firestore.rules` and `firestore.indexes.json` (the
+      `admin_audit` rule and index are new).
+- [ ] Add a TTL policy on `admin_audit.createdAt` if the log is expected to grow
+      indefinitely.
+- [ ] Add HTTP-level integration tests for `/v1/admin/*`; the manual smoke test
+      covered the happy paths and the 403/403 gates.
+- [ ] Add a drift test that compares the backend and web entitlement tables.
 
-- [ ] Never run on a device or emulator. **Do this first** — it is cheap and will
-      find real problems.
-- [ ] No instrumented or Compose UI tests
-- [ ] `TaskRepositoryImpl.observeActiveTasks()` returns an empty flow; needs the
-      `requestedBy` index query wired up
-- [ ] No `google-services.json`, so sign-in cannot be exercised (see `SETUP.md`)
-- [ ] No release signing config; `assembleRelease` uses the debug key
-- [ ] Paging 3 is wired into the build but the feed uses a plain limited query.
-      ADR-0005 anticipates paging; it is not implemented.
-- [ ] No Firebase App Check. Worth adding as defence in depth (ADR-0006).
-- [ ] No crash reporting or analytics
-- [ ] No widget, no Wear surface, no deep-link intent filter beyond the
-      notification extra
+### Android follow-ups
 
-### Backend gaps
+- [ ] Run the app on an emulator/device; it has still never been launched.
+- [ ] The tier gates are client-side as well as server-side; the Compose note on
+      a truncated timeline has not been seen on a screen yet.
+- [ ] No instrumented or Compose UI tests.
+- [ ] `TaskRepositoryImpl.observeActiveTasks()` still returns an empty flow.
+- [ ] No `google-services.json`, no release signing, no App Check.
 
-- [ ] Never deployed; never run against a real project
-- [ ] No integration tests against the Firestore emulator — the pure logic is
-      covered, the Firestore and Pub/Sub interactions are not
-- [ ] `rate_limits` documents need a Firestore TTL policy on `expiresAt`, or they
-      accumulate one per user per bucket per hour forever
-- [ ] No cheap change detection (ETag or content hash) before spending a Gemini
-      call, so an unchanged page still costs an extraction
-- [ ] No dead-source detection: a source that yields nothing repeatedly fails
-      silently rather than being flagged
+### Product/data follow-ups
 
-### Data migration
-
-- [ ] Existing `interests` documents use random ids, so a user can follow the
-      same software twice and be notified twice. New writes use deterministic
-      ids; **a one-off de-duplication pass over existing documents is still
-      needed** (`DATA_MODEL.md` §2).
-- [ ] `user_subscriptions` appears in the old rules with no reader or writer
-      anywhere. Confirm it is empty in production, then delete it.
-
----
-
-## 5. Tracked upgrades and watch items
-
-Things that are fine today and will need attention.
-
-| Item | Trigger | Detail |
-|---|---|---|
-| **Drop `android.newDsl=false` and `android.builtInKotlin=false`** | KSP gains built-in-Kotlin compatibility | The two load-bearing flags in `gradle.properties`. AGP 10 removes the old DSL, forcing this regardless. **The main one to watch.** ADR-0010 |
-| FCM token API | Firebase ships a replacement | `FirebaseMessaging.token` and `onNewToken` are deprecated in messaging 25.x with nothing to migrate to. Suppressed with the reason stated inline. |
-| GitHub API rate limits | Catalog grows past ~60 polls/hour | Anonymous limit is 60/hr; an authenticated token raises it to 5,000/hr. Needed before the catalog gets large. |
-| Gemini spend | Catalog × poll frequency grows | Add cheap change detection (ETag or content hash) before spending an extraction call, and tier poll frequency by popularity. `ARCHITECTURE.md` §7 |
-| Dead source detection | Vendors redesign their sites | A source yielding nothing N times running should be flagged for admin review. Currently fails silently. |
-| Catalog search | Prefix matching stops being enough | Firestore has no full-text search. Algolia or Typesense when it matters. |
+- [ ] History backfill is a paid operation server-side, but the Android client
+      does not expose a backfill action yet.
+- [ ] No billing. Tiers are assigned by an admin; there is no checkout. This is
+      deliberate and stated on the landing page.
+- [ ] Free follow cap is client-enforced (see §2.1).
+- [ ] Source health: a source that yields nothing repeatedly still fails
+      silently. `system_learnings` is an audit log, not a dead-source alarm.
+- [ ] Gemini cost: cheap change detection (ETag/content hash) before spending an
+      extraction call is still not implemented.
+- [ ] Existing `interests` documents with random ids still need the one-off
+      de-duplication pass.
 
 ---
 
 ## 6. Suggested order of work
 
-1. **Run the app on an emulator.** Cheapest possible way to find real problems.
-   Requires `google-services.json` — see `SETUP.md`.
-2. **Deploy the backend.** The code is written and tested; what is missing is a
-   project, a secret, topics and a scheduler. `backend/README.md` §Deployment.
-   Nothing else matters until release data exists.
-3. **Exercise the whole loop once by hand** — discover a piece of software, poll
-   it, confirm a release document appears, confirm a push arrives. Every
-   integration bug in this system lives in that path, and none of the unit tests
-   can see it.
-4. De-duplicate existing `interests` documents.
-5. Then the Android polish list in §4.
+1. **Deploy `backend`, `firebase` rules/indexes, then `web`** (in that order).
+2. **Run the live admin smoke test**: sign in, open Users & Plans, change a tier,
+   confirm the audit entry appears, then set it back.
+3. **Deploy the poller/notifier** to Cloud Run with Pub/Sub + Scheduler, then
+   discover one product and watch a release note arrive live.
+4. Run the Android app on an emulator; fix what actually breaks.
+5. Add Android instrumentation once the app has been run on a device; the tier
+   gates exist but have only been unit-tested.
 
 ---
 
 ## 7. Open questions for a human
 
-- **Which Firebase project?** The web app points at `gen-lang-client-0040242541`,
-  an AI Studio scratch project. Reusing it for a shipped Android app is probably
-  wrong; a fresh project with proper IAM is probably right. Nobody has decided.
-- **Is iOS wanted?** ADR-0002 says no and keeps the domain layer Android-free so
-  KMP stays cheap. If the answer changes, decide before the domain layer grows
-  Android dependencies by accident.
-- **Poll frequency and budget.** Nothing has been chosen, and it is the main
-  driver of Gemini cost.
-- **Orphaned prior work exists outside this repo.** A local checkout was found
-  with an entirely separate history — root commit `04ae22d`, up to
-  `7d48c29 "Add Gemini AI web search for software history"` — none of which is on
-  GitHub; the repo was reinitialised at some point and stranded it. On top sat 11
-  uncommitted changes including a **271-line Python scraper**
-  (`scraper/main.py`, `utils.py`, `debug.py`), which overlaps directly with what
-  `backend/poller` now does. Preserved at
-  `C:/projects/repositories/release-updates-notify-legacy`. Worth reading
-  before extending the poller — and worth deciding whether any of it should be
-  salvaged into this repo or deliberately abandoned.
-- **Play Store or internal distribution?** Determines whether release signing and
-  a privacy policy are near-term work.
+- **Which Firebase project is production?** The web config points at
+  `gen-lang-client-0040242541`, an AI Studio scratch project. A shipped product
+  probably wants a fresh project with proper IAM.
+- **Is the Vercel-hosted API the intended production host, or is Cloud Run?**
+  ADR-0004 says Cloud Run for the pipeline. The `api` service is currently on
+  Vercel, which is workable for HTTP but not for the Pub/Sub workers.
+- **Is iOS wanted?** ADR-0002 says no; the domain layer is Android-free so KMP
+  stays cheap.
+- **Poll frequency and Gemini budget.** Still undecided; it is the main cost
+  driver.
+- **Billing provider.** Tiers are admin-assigned now. Stripe is the obvious
+  candidate, but that is a product decision, not an agent one.

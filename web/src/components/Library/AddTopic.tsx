@@ -2,34 +2,55 @@ import { useState } from "react";
 import { 
   Box, TextField, Button, Paper, Typography, CircularProgress 
 } from "@mui/material";
-import { collection, addDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { Hash, Plus } from "lucide-react";
 import { db } from "../../services/firebase";
 import { useAuth } from "../../App";
+import { limitsFor } from "../../services/entitlements";
 import toast from "react-hot-toast";
 
-export default function AddTopic() {
-  const { user } = useAuth();
+export default function AddTopic({ trackedCount }: { trackedCount: number }) {
+  const { user, tier, isAdmin } = useAuth();
   const [topic, setTopic] = useState("");
   const [isAdding, setIsAdding] = useState(false);
+  const limit = isAdmin ? null : limitsFor(tier).maxTrackedItems;
+  const atLimit = limit !== null && trackedCount >= limit;
 
   const handleAddTopic = async () => {
-    if (!topic.trim() || !user) return;
+    const trimmed = topic.trim();
+    if (!trimmed || !user) return;
+    if (atLimit) {
+      toast.error(`The ${tier} plan tracks up to ${limit} items. Remove one or upgrade to Pro.`);
+      return;
+    }
+    if (trimmed.length > 200) {
+      toast.error("Topics are limited to 200 characters");
+      return;
+    }
     
     setIsAdding(true);
     try {
-      await addDoc(collection(db, "interests"), {
+      const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+      // Deterministic id: following the same topic twice is an idempotent
+      // overwrite, not a duplicate notification.
+      const ref = doc(db, "interests", `${user.uid}_topic_${slug || 'untitled'}`);
+      if ((await getDoc(ref)).exists()) {
+        toast.error(`You already track "${trimmed}"`);
+        return;
+      }
+
+      await setDoc(ref, {
         userId: user.uid,
         softwareId: null,
-        topic: topic.trim(),
-        softwareName: topic.trim(),
+        topic: trimmed,
+        softwareName: trimmed,
         type: 'topic',
         following: false,
         createdAt: new Date().toISOString()
       });
       
       setTopic("");
-      toast.success(`Broadened your scope with: ${topic}`);
+      toast.success(`Broadened your scope with: ${trimmed}`);
     } catch (e) {
       console.error("Error adding topic", e);
       toast.error("Failed to add topic");
@@ -77,8 +98,9 @@ export default function AddTopic() {
           variant="contained" 
           color="secondary"
           onClick={handleAddTopic}
-          disabled={isAdding || !topic.trim()}
+          disabled={isAdding || !topic.trim() || atLimit}
           sx={{ borderRadius: 2, minWidth: 100 }}
+          title={atLimit ? `Limit reached on ${tier}` : undefined}
         >
           {isAdding ? <CircularProgress size={20} color="inherit" /> : <Plus size={20} />}
         </Button>

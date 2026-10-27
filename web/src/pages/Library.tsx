@@ -8,22 +8,27 @@ import {
 } from "firebase/firestore";
 import { 
   Plus, Library as LibraryIcon, Trash2, Settings, Download, ExternalLink,
-  Search as SearchIcon, Filter, Bell, BellOff
+  Search as SearchIcon, Filter, Bell, BellOff, Lock
 } from "lucide-react";
 import { useAuth } from "../App";
 import { db } from "../services/firebase";
+import { limitsFor, tierLabel } from "../services/entitlements";
 import toast from "react-hot-toast";
 import { Link, useNavigate } from "react-router-dom";
 import { TextField, InputAdornment, Chip } from "@mui/material";
 import AddTopic from "../components/Library/AddTopic";
 
 export default function Library() {
-  const { user } = useAuth();
+  const { user, tier, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [interests, setInterests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const limits = limitsFor(tier);
+  const maxTracked = isAdmin ? null : limits.maxTrackedItems;
+  const canExport = isAdmin || limits.exportEnabled;
+  const atLimit = maxTracked !== null && interests.length >= maxTracked;
 
   useEffect(() => {
     if (!user) return;
@@ -60,27 +65,44 @@ export default function Library() {
   };
 
   const handleExport = async (format: 'json' | 'csv') => {
+    if (!canExport) {
+      toast.error("Export is available on Pro and Enterprise.");
+      return;
+    }
     try {
-      // Export all release notes for user's followed softwares
-      const followedIds = interests.map(i => i.softwareId).filter(Boolean);
+      // Export all release notes for the user's tracked software. Firestore's
+      // `in` operator is chunked, so a library larger than 10 does not silently
+      // export only the first slice.
+      const followedIds = interests.map(i => i.softwareId).filter(Boolean) as string[];
       if (followedIds.length === 0) {
         toast.error("No tracked software to export.");
         return;
       }
 
-      const q = query(
-        collection(db, "release_notes"),
-        where("softwareId", "in", followedIds.slice(0, 10)) // Firestore 'in' limit
+      const uniqueIds = Array.from(new Set(followedIds));
+      const snapshots = await Promise.all(
+        Array.from({ length: Math.ceil(uniqueIds.length / 10) }, (_, index) => {
+          const ids = uniqueIds.slice(index * 10, index * 10 + 10);
+          return getDocs(query(collection(db, "release_notes"), where("softwareId", "in", ids)));
+        }),
       );
-      const snapshot = await getDocs(q);
-      const data = snapshot.docs.map(d => d.data());
+
+      const byId = new Map<string, any>();
+      snapshots.forEach((snapshot) => {
+        snapshot.docs.forEach((release) => byId.set(release.id, release.data()));
+      });
+      const data = Array.from(byId.values());
+      if (data.length === 0) {
+        toast.error("No release notes to export yet.");
+        return;
+      }
       
       let content = "";
       if (format === 'json') {
         content = JSON.stringify(data, null, 2);
       } else {
         const headers = ["softwareName", "version", "category", "releaseDate", "summary"];
-        const rows = data.map(r => headers.map(h => `"${(r as any)[h] || ''}"`).join(","));
+        const rows = data.map(r => headers.map(h => `"${String((r as any)[h] || '').replace(/"/g, '""')}"`).join(","));
         content = [headers.join(","), ...rows].join("\n");
       }
       
@@ -90,7 +112,8 @@ export default function Library() {
       a.href = url;
       a.download = `updatenotify-export-${new Date().toISOString().split('T')[0]}.${format}`;
       a.click();
-      toast.success("Data exported successfully!");
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${data.length} release notes`);
     } catch (e) {
       toast.error("Export failed.");
     }
@@ -119,7 +142,11 @@ export default function Library() {
           <LibraryIcon size={32} color="#F27D26" style={{ flexShrink: 0 }} />
           <Box>
             <Typography variant="h4" sx={{ fontWeight: 900, lineHeight: 1.2, fontSize: { xs: '1.75rem', sm: '2.125rem' } }}>My Library</Typography>
-            <Typography variant="caption" color="text.secondary">Manage your tracked software, topics, and data.</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {interests.length} track{interests.length === 1 ? '' : 's'} • {tierLabel(tier)} plan • {
+                maxTracked === null ? 'unlimited' : `${interests.length}/${maxTracked} used`
+              }
+            </Typography>
           </Box>
         </Box>
         <Button 
@@ -128,6 +155,7 @@ export default function Library() {
           to="/library/add"
           startIcon={<Plus size={18} />}
           sx={{ borderRadius: 3, px: 3, fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
+          color={atLimit ? 'inherit' : 'primary'}
         >
           Track a Software
         </Button>
@@ -254,7 +282,7 @@ export default function Library() {
         <Grid size={{ xs: 12, md: 4 }}>
           <Box sx={{ position: 'sticky', top: 100, display: 'flex', flexDirection: 'column', gap: 4 }}>
             <Box>
-              <AddTopic />
+              <AddTopic trackedCount={interests.length} />
             </Box>
 
             <Box>
@@ -265,22 +293,25 @@ export default function Library() {
             <Paper sx={{ p: 3, border: '1px solid rgba(255, 255, 255, 0.05)', bgcolor: 'rgba(255, 255, 255, 0.01)' }}>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Export your tracked release notes to CSV or JSON for local archiving and self-hosting.
+                {!canExport && ' Export is a Pro feature.'}
               </Typography>
               
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Button 
                   fullWidth 
                   variant="outlined" 
-                  startIcon={<Download size={16} />}
+                  startIcon={canExport ? <Download size={16} /> : <Lock size={16} />}
                   onClick={() => handleExport('json')}
+                  disabled={!canExport}
                 >
                   Export as JSON
                 </Button>
                 <Button 
                   fullWidth 
                   variant="outlined" 
-                  startIcon={<Download size={16} />}
+                  startIcon={canExport ? <Download size={16} /> : <Lock size={16} />}
                   onClick={() => handleExport('csv')}
+                  disabled={!canExport}
                 >
                   Export as CSV
                 </Button>
