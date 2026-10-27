@@ -249,9 +249,12 @@ This is the single biggest gap against "data is live and real-time".
 
 - **Firebase project: decided (ADR-0013).** Move to the shared `trend-equity`
   project (`gen-lang-client-0099813375`) using the named database `updatenotify`.
-  The database, web app, rules and indexes exist; the clients are switched on
-  branch `feat/trend-equity-database`, **not yet merged** because prod would then
-  read an empty database and the API has no credentials.
+  The database, web app, rules, indexes and the three Cloud Run services
+  (`api` public + token-checked, `poller`/`notifier` private, hourly Scheduler
+  sweep) are live in `europe-west1`. The old AI Studio data was **not** migrated:
+  the new database starts empty. API: `https://updatenotify-api-vwdnd6mwaq-ew.a.run.app`.
+  Still unverified: a signed-in admin call, a real poll against Gemini, and the
+  Vercel domain being in Firebase Auth's authorised domains.
 - **Is the Vercel-hosted API the intended production host, or is Cloud Run?**
   ADR-0004 says Cloud Run for the pipeline. The `api` service is currently on
   Vercel, which is workable for HTTP but not for the Pub/Sub workers.

@@ -82,9 +82,12 @@ immediately rather than failing on the first request an hour later.
 
 ## Deployment sketch
 
-The `api` service runs on the Vercel project `release-update-backend`. The
-poller and notifier are written for Cloud Run + Pub/Sub and have **not** been
-run against a real project — see [`../docs/STATUS.md`](../docs/STATUS.md).
+All three services (`api`, `poller`, `notifier`) run on Cloud Run in the shared
+`trend-equity` project, deployed by `scripts/deploy-gcp.ps1` (ADR-0013). `api`
+is public and verifies Firebase tokens itself; `poller` and `notifier` only
+accept Pub/Sub / Scheduler OIDC calls. The old Vercel `release-update-backend`
+project has no credentials and is retired. See
+[`../docs/STATUS.md`](../docs/STATUS.md).
 
 ```bash
 PROJECT=your-project
