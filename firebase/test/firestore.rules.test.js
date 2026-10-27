@@ -39,8 +39,9 @@ before(async () => {
     projectId: 'updatenotify-test',
     firestore: {
       rules: fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8'),
-      host: '127.0.0.1',
-      port: 8080,
+      // emulators:exec exports the real host:port; 8080 is only the fallback.
+      host: (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':')[0],
+      port: Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':')[1]),
     },
   });
 });
@@ -196,6 +197,26 @@ describe('additional deny cases', () => {
     await assertFails(updateDoc(doc(asUser(VICTIM), 'users', VICTIM), { uid: ATTACKER }));
   });
 
+  it('a user cannot upgrade their own subscription tier', async () => {
+    for (const tier of ['PRO', 'ENTERPRISE']) {
+      await assertFails(updateDoc(doc(asUser(VICTIM), 'users', VICTIM), {
+        subscriptionTier: tier,
+      }));
+    }
+    // Not even alongside an otherwise-legal change.
+    await assertFails(updateDoc(doc(asUser(VICTIM), 'users', VICTIM), {
+      displayName: 'Renamed', subscriptionTier: 'PRO',
+    }));
+  });
+
+  it('a new account cannot start on a paid tier', async () => {
+    await assertFails(setDoc(doc(asUser(ATTACKER), 'users', ATTACKER), {
+      uid: ATTACKER, email: 'attacker@example.com',
+      createdAt: new Date().toISOString(),
+      subscriptionTier: 'PRO',
+    }));
+  });
+
   it('an interest cannot claim to be both software and topic', async () => {
     await assertFails(setDoc(doc(asUser(ATTACKER), 'interests', `${ATTACKER}_both`), {
       userId: ATTACKER, softwareId: 'fl-studio', topic: 'also a topic',
@@ -234,6 +255,14 @@ describe('additional deny cases', () => {
 // ---------------------------------------------------------------------------
 
 describe('allow cases the app depends on', () => {
+  it('a new account can be created on the FREE tier', async () => {
+    await assertSucceeds(setDoc(doc(asUser(ATTACKER), 'users', ATTACKER), {
+      uid: ATTACKER, email: 'attacker@example.com',
+      createdAt: new Date().toISOString(),
+      subscriptionTier: 'FREE',
+    }));
+  });
+
   it('a user reads their own profile', async () => {
     await assertSucceeds(getDoc(doc(asUser(VICTIM), 'users', VICTIM)));
   });

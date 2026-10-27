@@ -16,7 +16,7 @@ import toast from "react-hot-toast";
 const ITEMS_PER_PAGE = 10;
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, tier } = useAuth();
   const [tab, setTab] = useState(0); // 0: For You, 1: Explore All
   const [releases, setReleases] = useState<any[]>([]);
   const [interests, setInterests] = useState<any[]>([]);
@@ -172,16 +172,18 @@ export default function Dashboard() {
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 800, lineHeight: 1.2 }}>Release Updates</Typography>
           <Typography variant="caption" color="text.secondary">
-            Feed status: Active • Tracking <b>{interests.length}</b> products
+            Feed status: Active • Tracking <b>{interests.length}</b> products • Plan: <b>{tier}</b>
           </Typography>
         </Box>
       </Box>
 
       {interests.length === 0 && !loading ? (
         <Paper sx={{ textAlign: "center", py: 12, bgcolor: "rgba(255, 255, 255, 0.02)", borderRadius: 4, border: '1px dashed rgba(255, 255, 255, 0.1)' }}>
-          <Typography variant="h5" color="text.secondary" gutterBottom sx={{ fontWeight: 700 }}>Your feed is empty</Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-            You haven't tracked any software or topics yet.
+          <Typography variant="h5" color="text.secondary" gutterBottom sx={{ fontWeight: 700 }}>{tier === "FREE" ? "Welcome to UpdateNotify!" : `You're on ${tier === "PRO" ? "Pro" : "Enterprise"}`}</Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, maxWidth: 480, mx: 'auto' }}>
+            {tier === "FREE"
+              ? "Follow up to 5 software items to get started. Upgrade to Pro for unlimited tracking and detailed release notes."
+              : "Track unlimited software and get detailed release notes. Follow something to see it here."}
           </Typography>
           <Button component={Link} to="/library" variant="contained" size="large" sx={{ borderRadius: 100, px: 4 }}>
             Go to Library

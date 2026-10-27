@@ -31,6 +31,7 @@ object DatabaseModule {
         // No fallbackToDestructiveMigration. Silently wiping a user's offline
         // library on a schema change is not an acceptable failure mode; a missing
         // migration should fail loudly in development instead.
+        .addMigrations(UpdateNotifyDatabase.MIGRATION_1_2)
         .build()
 
     @Provides fun provideSoftwareDao(db: UpdateNotifyDatabase): SoftwareDao = db.softwareDao()

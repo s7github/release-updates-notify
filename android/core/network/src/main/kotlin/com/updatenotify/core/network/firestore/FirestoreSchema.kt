@@ -74,6 +74,8 @@ object UserFields {
     const val CREATED_AT = "createdAt"
     const val SETTINGS = "settings"
     const val FCM_TOKENS = "fcmTokens"
+    const val SUBSCRIPTION_TIER = "subscriptionTier"
+    const val SUBSCRIPTION_EXPIRES_AT = "subscriptionExpiresAt"
 
     const val NOTIFY_FEATURES = "notifyFeatures"
     const val NOTIFY_SECURITY = "notifySecurity"

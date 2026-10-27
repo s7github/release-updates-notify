@@ -64,6 +64,19 @@ export default function Landing() {
               </Box>
             ))}
           </Box>
+
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2, width: '100%' }}>
+            {[
+              { name: "Free", desc: "Track up to 5 software items. Get notified when they ship." },
+              { name: "Pro", desc: "Track unlimited software. Get detailed release notes." },
+              { name: "Enterprise", desc: "Full access with admin dashboard." }
+            ].map((plan) => (
+              <Box key={plan.name} sx={{ flex: 1, p: 2, borderRadius: 3, border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{plan.name}</Typography>
+                <Typography variant="body2" color="text.secondary">{plan.desc}</Typography>
+              </Box>
+            ))}
+          </Box>
         </Box>
       </Container>
     </Box>

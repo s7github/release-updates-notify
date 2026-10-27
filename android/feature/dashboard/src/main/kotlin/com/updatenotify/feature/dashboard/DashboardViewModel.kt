@@ -2,10 +2,12 @@ package com.updatenotify.feature.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.updatenotify.core.domain.repository.AuthRepository
 import com.updatenotify.core.domain.repository.ReleaseRepository
 import com.updatenotify.core.domain.usecase.FeedItem
 import com.updatenotify.core.domain.usecase.GetFeedUseCase
 import com.updatenotify.core.model.ReleaseCategory
+import com.updatenotify.core.model.SubscriptionTier
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -23,6 +26,7 @@ data class DashboardUiState(
     val activeFilters: Set<ReleaseCategory> = emptySet(),
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
+    val subscriptionTier: SubscriptionTier = SubscriptionTier.FREE,
 ) {
     /**
      * Distinguishes "you follow nothing" from "you follow things but the pipeline
@@ -36,6 +40,7 @@ data class DashboardUiState(
 class DashboardViewModel @Inject constructor(
     getFeed: GetFeedUseCase,
     private val releaseRepository: ReleaseRepository,
+    authRepository: AuthRepository,
 ) : ViewModel() {
 
     private val filters = MutableStateFlow<Set<ReleaseCategory>>(emptySet())
@@ -45,13 +50,17 @@ class DashboardViewModel @Inject constructor(
     @OptIn(ExperimentalCoroutinesApi::class)
     private val feed = filters.flatMapLatest { active -> getFeed(active) }
 
+    private val tier = authRepository.currentUser
+        .map { it?.subscriptionTier ?: SubscriptionTier.FREE }
+
     val uiState: StateFlow<DashboardUiState> =
-        combine(feed, filters, refreshing, error) { items, active, isRefreshing, err ->
+        combine(feed, filters, refreshing, error, tier) { items, active, isRefreshing, err, t ->
             DashboardUiState(
                 items = items,
                 activeFilters = active,
                 isRefreshing = isRefreshing,
                 errorMessage = err,
+                subscriptionTier = t,
             )
         }.stateIn(
             scope = viewModelScope,

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider, CssBaseline, Box, CircularProgress } from "@mui/material";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 import { Toaster } from "react-hot-toast";
 
 import { auth, db } from "./services/firebase";
@@ -21,10 +21,13 @@ import Navbar from "./components/layout/Navbar";
 interface AuthContextType {
   user: User | null;
   isAdmin: boolean;
+  tier: SubscriptionTier;
   loading: boolean;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, isAdmin: false, loading: true });
+export type SubscriptionTier = "FREE" | "PRO" | "ENTERPRISE";
+
+const AuthContext = createContext<AuthContextType>({ user: null, isAdmin: false, tier: "FREE", loading: true });
 
 const originalWarn = console.warn;
 console.warn = (...args) => {
@@ -47,12 +50,22 @@ export const useAuth = () => useContext(AuthContext);
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [tier, setTier] = useState<SubscriptionTier>("FREE");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, async (user) => {
+    let stopTier: (() => void) | undefined;
+    const stopAuth = onAuthStateChanged(auth, async (user) => {
+      stopTier?.();
+      stopTier = undefined;
       setUser(user);
       if (user) {
+        // The tier is backend-owned; we only ever read it. Missing = FREE.
+        stopTier = onSnapshot(doc(db, "users", user.uid), (s) => {
+          const t = s.data()?.subscriptionTier;
+          setTier(t === "PRO" || t === "ENTERPRISE" ? t : "FREE");
+        }, () => setTier("FREE"));
+
         // Sync user to Firestore
         const userDoc = doc(db, "users", user.uid);
         const snap = await getDoc(userDoc);
@@ -63,6 +76,7 @@ export default function App() {
             displayName: user.displayName,
             photoURL: user.photoURL,
             createdAt: new Date().toISOString(),
+            subscriptionTier: "FREE",
             settings: {
               notifyFeatures: true,
               notifySecurity: true,
@@ -87,9 +101,11 @@ export default function App() {
         }
       } else {
         setIsAdmin(false);
+        setTier("FREE");
       }
       setLoading(false);
     });
+    return () => { stopAuth(); stopTier?.(); };
   }, []);
 
   if (loading) {
@@ -103,7 +119,7 @@ export default function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <AuthContext.Provider value={{ user, isAdmin, loading }}>
+      <AuthContext.Provider value={{ user, isAdmin, tier, loading }}>
           <Router>
             <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
               {user && <Navbar />}

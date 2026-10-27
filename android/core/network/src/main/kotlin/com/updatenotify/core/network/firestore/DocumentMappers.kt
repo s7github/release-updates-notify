@@ -10,6 +10,7 @@ import com.updatenotify.core.model.NotificationSettings
 import com.updatenotify.core.model.Release
 import com.updatenotify.core.model.ReleaseCategory
 import com.updatenotify.core.model.Software
+import com.updatenotify.core.model.SubscriptionTier
 import com.updatenotify.core.model.TaskStatus
 import com.updatenotify.core.model.TaskType
 import com.updatenotify.core.model.User
@@ -120,6 +121,11 @@ fun DocumentSnapshot.toUser(isAdmin: Boolean): User? {
             notifyOptimizations = flag(UserFields.NOTIFY_OPTIMIZATIONS),
         ),
         isAdmin = isAdmin,
+        // Missing or unrecognised = FREE; the backend is the only writer.
+        subscriptionTier = SubscriptionTier.entries.firstOrNull {
+            it.name == getString(UserFields.SUBSCRIPTION_TIER)
+        } ?: SubscriptionTier.FREE,
+        subscriptionExpiresAt = epochMillis(UserFields.SUBSCRIPTION_EXPIRES_AT),
     )
 }
 

@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-09-09
+**Last updated:** 2026-10-27
 **Updated by:** the native Android conversion session, then a Windows verification run
 
 > **If you are an agent or a person picking this up cold, this is the file that
@@ -27,6 +27,32 @@ before any of it is real — all infrastructure, no remaining code. Until then t
 dashboard is empty, because nothing is writing `release_notes`.
 
 **This status update reflects the research and analysis phase, which identifies the key gaps and planned improvements to move toward deployment and production readiness. The foundation is now complete, and implementation begins immediately.**
+
+## 1.0. Subscription-tier UI fix (2026-10-27)
+
+Commit f294d47 ("subscription tiers") only touched Android, so the web app (the
+UI you actually run) never showed it, and the Android part did not compile
+(`:feature:dashboard` imported `MainViewModel` from `:app`). Fixed:
+
+- **Web:** `App.tsx` exposes `tier` (read-only, from `users/{uid}`), `Landing`
+  shows the three plans, `Dashboard` shows the plan and tier-aware empty state.
+- **Android:** tier now flows `AuthRepository` -> `DashboardViewModel` ->
+  `DashboardUiState`; literal `\n` on the landing screen fixed; filtered-empty
+  copy restored.
+- **Firestore rules:** the commit added an `allow update` that let a user write
+  their own `subscriptionTier` (self-upgrade). Removed; create now only accepts
+  `FREE`. Tier is backend-only (Admin SDK).
+
+**Android persistence (follow-up, same day):** `subscriptionTier` /
+`subscriptionExpiresAt` are read from Firestore (`DocumentMappers.toUser`), stored
+in Room (DB v2, `MIGRATION_1_2`, schema `2.json` committed) and mapped to `User`.
+Unknown or missing tier falls back to FREE. Rules suite now 34 passing, including
+3 tier cases; the test reads `FIRESTORE_EMULATOR_HOST` so it can run when 8080 is
+taken (Docker holds it on the dev machine).
+
+**Not verified:** the 1->2 migration is not exercised by an instrumented
+migration test (compiled and schema-exported only); nothing has run on a device;
+no backend code sets `subscriptionTier` yet, so every account is FREE.
 
 ## 1.1. Current Status: Research Phase Complete, Implementation Underway
 

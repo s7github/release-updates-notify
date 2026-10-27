@@ -6,6 +6,7 @@ import com.updatenotify.core.model.NotificationSettings
 import com.updatenotify.core.model.Release
 import com.updatenotify.core.model.ReleaseCategory
 import com.updatenotify.core.model.Software
+import com.updatenotify.core.model.SubscriptionTier
 import com.updatenotify.core.model.User
 
 /** Entity ↔ domain mapping. Kept beside the entities so the pair never drifts. */
@@ -103,6 +104,9 @@ fun UserEntity.toDomain(): User = User(
         notifyOptimizations = notifyOptimizations,
     ),
     isAdmin = isAdmin,
+    subscriptionTier = SubscriptionTier.entries.firstOrNull { it.name == subscriptionTier }
+        ?: SubscriptionTier.FREE,
+    subscriptionExpiresAt = subscriptionExpiresAt,
 )
 
 fun User.toEntity(): UserEntity = UserEntity(
@@ -115,4 +119,6 @@ fun User.toEntity(): UserEntity = UserEntity(
     notifyFixes = settings.notifyFixes,
     notifyOptimizations = settings.notifyOptimizations,
     isAdmin = isAdmin,
+    subscriptionTier = subscriptionTier.name,
+    subscriptionExpiresAt = subscriptionExpiresAt,
 )

@@ -32,7 +32,6 @@ import com.updatenotify.core.designsystem.theme.style
 import com.updatenotify.core.model.ReleaseCategory
 import com.updatenotify.core.model.SubscriptionTier
 import com.updatenotify.core.ui.ReleaseCard
-import com.updatenotify.feature.dashboard.DashboardViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,8 +43,6 @@ fun DashboardScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    val mainViewModel: com.updatenotify.MainViewModel = hiltViewModel()
-    val currentUser by mainViewModel.authRepository.currentUser.collectAsStateWithLifecycle()
 
     LaunchedEffect(state.errorMessage) {
         state.errorMessage?.let {
@@ -67,15 +64,19 @@ fun DashboardScreen(
                 .padding(padding),
         ) {
             if (state.isEmpty) {
-                val subscriptionTier = currentUser?.subscriptionTier ?: SubscriptionTier.FREE
+                val subscriptionTier = state.subscriptionTier
                 MessageState(
                     icon = Icons.Filled.Inbox,
-                    title = when (subscriptionTier) {
+                    title = if (state.activeFilters.isNotEmpty()) {
+                        "Nothing matches those filters"
+                    } else when (subscriptionTier) {
                         SubscriptionTier.FREE -> "Welcome to UpdateNotify!"
                         SubscriptionTier.PRO -> "You're on Pro! Get more features."
                         SubscriptionTier.ENTERPRISE -> "Enterprise plan activated!"
                     },
-                    body = when (subscriptionTier) {
+                    body = if (state.activeFilters.isNotEmpty()) {
+                        "Try clearing a filter to see more."
+                    } else when (subscriptionTier) {
                         SubscriptionTier.FREE -> "Follow 3-5 software updates to get started. Free users see:\n" +
                             "• 3 tracked software updates per day\n" +
                             "• Basic notifications for major releases\n" +

@@ -9,6 +9,7 @@ import com.updatenotify.core.model.NotificationSettings
 import com.updatenotify.core.model.Release
 import com.updatenotify.core.model.ReleaseCategory
 import com.updatenotify.core.model.Software
+import com.updatenotify.core.model.SubscriptionTier
 import com.updatenotify.core.model.User
 import org.junit.Test
 
@@ -140,5 +141,28 @@ class MappersTest {
             isAdmin = true,
         )
         assertThat(original.toEntity().toDomain()).isEqualTo(original)
+    }
+
+    @Test
+    fun `user round-trips a paid subscription tier and expiry`() {
+        val original = User(
+            uid = "u2",
+            email = "pro@example.com",
+            displayName = null,
+            photoUrl = null,
+            settings = NotificationSettings.DEFAULT,
+            subscriptionTier = SubscriptionTier.PRO,
+            subscriptionExpiresAt = 1_800_000_000_000L,
+        )
+        assertThat(original.toEntity().toDomain()).isEqualTo(original)
+    }
+
+    @Test
+    fun `an unrecognised stored tier falls back to FREE`() {
+        val entity = User(
+            uid = "u3", email = "x@example.com", displayName = null, photoUrl = null,
+            settings = NotificationSettings.DEFAULT,
+        ).toEntity().copy(subscriptionTier = "PLATINUM")
+        assertThat(entity.toDomain().subscriptionTier).isEqualTo(SubscriptionTier.FREE)
     }
 }

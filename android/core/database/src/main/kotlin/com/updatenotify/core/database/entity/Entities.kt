@@ -1,5 +1,6 @@
 package com.updatenotify.core.database.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -84,6 +85,9 @@ data class UserEntity(
     val notifyFixes: Boolean,
     val notifyOptimizations: Boolean,
     val isAdmin: Boolean,
+    // Stored as the enum name. The default is what the 1->2 migration backfills.
+    @ColumnInfo(defaultValue = "FREE") val subscriptionTier: String = "FREE",
+    val subscriptionExpiresAt: Long? = null,
 )
 
 /**

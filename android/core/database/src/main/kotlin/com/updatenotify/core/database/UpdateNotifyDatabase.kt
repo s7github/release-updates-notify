@@ -2,6 +2,8 @@ package com.updatenotify.core.database
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.updatenotify.core.database.dao.InterestDao
 import com.updatenotify.core.database.dao.ReleaseDao
 import com.updatenotify.core.database.dao.SoftwareDao
@@ -28,7 +30,7 @@ import com.updatenotify.core.database.entity.UserEntity
         UserEntity::class,
         SyncStateEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class UpdateNotifyDatabase : RoomDatabase() {
@@ -40,5 +42,13 @@ abstract class UpdateNotifyDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "updatenotify.db"
+
+        /** v2: users gain a subscription tier (backend-owned, read-only on device). */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE users ADD COLUMN subscriptionTier TEXT NOT NULL DEFAULT 'FREE'")
+                db.execSQL("ALTER TABLE users ADD COLUMN subscriptionExpiresAt INTEGER")
+            }
+        }
     }
 }
