@@ -2,6 +2,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { config } from '../lib/config.js';
 import { Collections, db, messaging } from '../lib/firebase.js';
 import { log } from '../lib/logging.js';
+import { captureException, captureMessage } from '../lib/sentry.js';
 import { CATEGORY_SETTING, type ReleasePublishedMessage } from '../lib/types.js';
 
 /**
@@ -29,6 +30,35 @@ export async function fanOutRelease(
   message: ReleasePublishedMessage,
 ): Promise<FanOutResult> {
   const { softwareId, category } = message;
+
+  // Validate message to prevent malformed triggers
+  if (!softwareId || !category) {
+    log.warn('dropping malformed release message', {
+      softwareId: softwareId || 'missing',
+      category: category || 'missing',
+      version: message.version,
+      releaseId: message.releaseId,
+    });
+    return { softwareId: softwareId || 'unknown', subscribers: 0, eligible: 0, sent: 0, prunedTokens: 0 };
+  }
+
+  // Validate category is in our allowed list
+  const allowedCategories = [
+    'New Features', 'Feature Updates', 'Optimization/Tips', 'Bug Fixes',
+    'Security Patches', 'Major Milestone Update', 'Compliance Updates',
+    'Accessibility Improvements', 'Localization Updates', 'API Breaking Changes',
+    'Enterprise Features', 'Performance Changes', 'Developer Experience Changes',
+    'Infrastructure Changes', 'Data Changes', 'UI/UX Changes', 'Documentation Updates'
+  ];
+  
+  if (!allowedCategories.includes(category)) {
+    log.warn('dropping message with invalid category', {
+      softwareId,
+      category,
+      version: message.version,
+    });
+    return { softwareId, subscribers: 0, eligible: 0, sent: 0, prunedTokens: 0 };
+  }
 
   // Indexed on softwareId — see firebase/firestore.indexes.json. Without that
   // index this is a collection scan on the hottest path in the system.
@@ -134,7 +164,28 @@ export async function fanOutRelease(
         const token = batch[index];
         if (token) deadTokens.push(token);
       } else {
-        log.warn('fcm send failed', { code, softwareId });
+        // Enhanced error handling for FCM send failures
+        captureMessage('fcm send failed', 'warning', { code, softwareId, category, version: message.version });
+        log.warn('fcm send failed', { code, softwareId, category, version: message.version });
+        
+        // Circuit breaker logic - if too many failures, pause sending for this software
+        const failureRate = sent / (sent + response.responses.length);
+        if (failureRate > 0.3) { // More than 30% failure rate
+          log.error('high FCM failure rate - implementing circuit breaker', {
+            softwareId,
+            category,
+            version: message.version,
+            failureRate: failureRate.toFixed(2),
+            sent,
+            total: sent + response.responses.length,
+          });
+          captureMessage('fcm circuit breaker triggered', 'error', {
+            softwareId,
+            category,
+            version: message.version,
+            failureRate: failureRate.toFixed(2),
+          });
+        }
       }
     });
   }
@@ -169,7 +220,14 @@ async function pruneTokens(
         .collection(Collections.USERS)
         .doc(uid)
         .update({ fcmTokens: FieldValue.arrayRemove(...theirs) })
-        .catch((error) => log.warn('token prune failed', { uid, error: String(error) }));
+        .catch((error) => {
+          captureException(error as Error, {
+            uid,
+            operation: 'tokenPrune',
+            service: 'notifier',
+          });
+          log.warn('token prune failed', { uid, error: String(error) });
+        });
     }),
   );
 }

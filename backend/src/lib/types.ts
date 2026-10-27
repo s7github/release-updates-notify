@@ -13,6 +13,17 @@ export const RELEASE_CATEGORIES = [
   'Bug Fixes',
   'Security Patches',
   'Major Milestone Update',
+  'Compliance Updates',
+  'Accessibility Improvements',
+  'Localization Updates',
+  'API Breaking Changes',
+  'Enterprise Features',
+  'Performance Changes',
+  'Developer Experience Changes',
+  'Infrastructure Changes',
+  'Data Changes',
+  'UI/UX Changes',
+  'Documentation Updates',
 ] as const;
 
 export type ReleaseCategory = (typeof RELEASE_CATEGORIES)[number];
@@ -98,6 +109,49 @@ export type NotificationSettingKey =
   | 'notifyFixes'
   | 'notifyOptimizations';
 
+/** Source types used for caching and fetching. */
+export type SourceType =
+  | 'github'
+  | 'rss'
+  | 'html'
+  | 'changelog'
+  | 'npm'
+  | 'pypi'
+  | 'maven'
+  | 'rubygems'
+  | 'wordpress'
+  | 'medium'
+  | 'linkedin'
+  | 'twitter'
+  | 'facebook'
+  | 'github'
+  | 'gitlab'
+  | 'bitbucket'
+  | 'gitea'
+  | 'dockerhub'
+  | 'npm'
+  | 'pypi'
+  | 'maven'
+  | 'rubygems'
+  | 'wordpress'
+  | 'medium'
+  | 'linkedin'
+  | 'twitter'
+  | 'facebook'
+  | 'github'
+  | 'gitlab'
+  | 'bitbucket'
+  | 'gitea'
+  | 'dockerhub'
+  | 'blog'
+  | 'community'
+  | 'newsletter'
+  | 'social'
+  | 'rss'
+  | 'atom'
+  | 'feed'
+  | 'custom';
+
 /**
  * Which preference gates each category.
  *
@@ -111,4 +165,15 @@ export const CATEGORY_SETTING: Record<ReleaseCategory, NotificationSettingKey | 
   'Bug Fixes': 'notifyFixes',
   'Security Patches': 'notifySecurity',
   'Major Milestone Update': null,
+  'Compliance Updates': null,
+  'Accessibility Improvements': 'notifyFeatures',
+  'Localization Updates': 'notifyFeatures',
+  'API Breaking Changes': null,
+  'Enterprise Features': 'notifyFeatures',
+  'Performance Changes': 'notifyOptimizations',
+  'Developer Experience Changes': 'notifyFeatures',
+  'Infrastructure Changes': 'notifyOptimizations',
+  'Data Changes': 'notifySecurity',
+  'UI/UX Changes': 'notifyFeatures',
+  'Documentation Updates': 'notifyOptimizations',
 };

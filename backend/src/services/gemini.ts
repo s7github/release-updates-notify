@@ -3,6 +3,7 @@ import { config } from '../lib/config.js';
 import { parseToIso } from '../lib/dates.js';
 import { log } from '../lib/logging.js';
 import { isProbablyDateNotVersion } from '../lib/version.js';
+import { captureMessage } from '../lib/sentry.js';
 import {
   isReleaseCategory,
   type DiscoveredSource,
@@ -119,7 +120,7 @@ export async function extractRelease(
   {
     "version": string,
     "releaseDate": string | null,
-    "category": "New Features" | "Feature Updates" | "Optimization/Tips" | "Bug Fixes" | "Security Patches" | "Major Milestone Update",
+    "category": "New Features" | "Feature Updates" | "Optimization/Tips" | "Bug Fixes" | "Security Patches" | "Major Milestone Update" | "Compliance Updates" | "Accessibility Improvements" | "Localization Updates" | "API Breaking Changes" | "Enterprise Features" | "Performance Changes" | "Developer Experience Changes" | "Infrastructure Changes" | "Data Changes" | "UI/UX Changes" | "Documentation Updates",
     "summary": string,
     "isGenuineUpdate": boolean,
     "metadataLearnings": {
@@ -150,7 +151,7 @@ export async function searchLatestRelease(softwareName: string): Promise<Extract
   {
     "version": string,
     "releaseDate": string | null,
-    "category": "New Features" | "Major Milestone Update" | "Bug Fixes",
+    "category": "New Features" | "Major Milestone Update" | "Bug Fixes" | "Security Patches" | "Feature Updates" | "Optimization/Tips" | "Compliance Updates" | "Accessibility Improvements" | "Localization Updates" | "API Breaking Changes" | "Enterprise Features" | "Performance Changes" | "Developer Experience Changes" | "Infrastructure Changes" | "Data Changes" | "UI/UX Changes" | "Documentation Updates",
     "summary": string,
     "isGenuineUpdate": true,
     "metadataLearnings": {
@@ -165,6 +166,209 @@ export async function searchLatestRelease(softwareName: string): Promise<Extract
   });
 
   return sanitizeRelease(parseJsonResponse<ExtractedRelease>(response.text ?? ''));
+}
+
+/** Multi-strategy extraction with fallback chain and confidence scoring */
+export interface ExtractionStrategy {
+  name: string;
+  weight: number;
+  timeoutMs: number;
+  retryCount: number;
+}
+
+export interface ExtractionResult {
+  release: ExtractedRelease;
+  strategy: string;
+  confidence: number;
+  executionTimeMs: number;
+  sourceUrls?: string[];
+}
+
+export async function extractWithFallback(
+  softwareName: string,
+  rawData: string,
+  strategies?: ExtractionStrategy[],
+): Promise<ExtractionResult> {
+  const defaultStrategies: ExtractionStrategy[] = [
+    { name: 'gemini_direct', weight: 1.0, timeoutMs: 30000, retryCount: 2 },
+    { name: 'gemini_search_grounded', weight: 0.9, timeoutMs: 30000, retryCount: 1 },
+    { name: 'gemini_history', weight: 0.8, timeoutMs: 60000, retryCount: 2 },
+    { name: 'gemini_web_search', weight: 0.7, timeoutMs: 30000, retryCount: 1 },
+  ];
+
+  const extractionStrategies = strategies || defaultStrategies;
+  let lastError: Error | null = null;
+
+  for (const strategy of extractionStrategies) {
+    const startTime = Date.now();
+    let attempts = 0;
+    
+    while (attempts <= strategy.retryCount) {
+      attempts++;
+      try {
+        let result: ExtractedRelease;
+        let sourceUrls: string[] = [];
+
+        switch (strategy.name) {
+          case 'gemini_direct':
+            result = await extractRelease(softwareName, rawData);
+            sourceUrls = ['direct_extraction'];
+            break;
+          case 'gemini_search_grounded':
+            // This is essentially what extractRelease already does with search grounding
+            result = await extractRelease(softwareName, rawData);
+            sourceUrls = ['search_grounded'];
+            break;
+          case 'gemini_history':
+            result = await extractHistory(softwareName, rawData);
+            if (Array.isArray(result) && result.length > 0) {
+              result = result[0]; // Take the most recent
+            } else {
+              throw new Error('No history extracted');
+            }
+            sourceUrls = ['history_extraction'];
+            break;
+          case 'gemini_web_search':
+            result = await searchLatestRelease(softwareName);
+            sourceUrls = ['web_search'];
+            break;
+          default:
+            throw new Error(`Unknown extraction strategy: ${strategy.name}`);
+        }
+
+        // Validate and sanitize the result
+        const sanitized = sanitizeRelease(result);
+        
+        // Calculate confidence score
+        const confidence = calculateExtractionConfidence(strategy, sanitized, rawData);
+        
+        // Log successful extraction
+        const executionTime = Date.now() - startTime;
+        await captureMessage('extraction_successful', 'info', {
+          softwareName,
+          strategy: strategy.name,
+          confidence,
+          executionTimeMs: executionTime,
+          version: sanitized.version,
+          category: sanitized.category,
+        });
+
+        return {
+          release: sanitized,
+          strategy: strategy.name,
+          confidence,
+          executionTimeMs: executionTime,
+          sourceUrls,
+        };
+
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        
+        // Categorize the error for better monitoring
+        categorizeExtractionError(strategy, lastError, softwareName);
+        
+        await captureMessage('extraction_strategy_failed', 'warning', {
+          softwareName,
+          strategy: strategy.name,
+          attempt: attempts,
+          maxAttempts: strategy.retryCount + 1,
+          error: lastError.message,
+          lastError: lastError.toString(),
+        });
+        
+        // Wait before retry (exponential backoff)
+        if (attempts <= strategy.retryCount) {
+          const delayMs = 1000 * Math.pow(2, attempts - 1);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+  }
+
+  // All strategies failed
+  const fallbackError = lastError || new Error('All extraction strategies failed');
+  
+  // For backward compatibility, throw a formatted error
+  const errorMessage = `Failed to extract release for ${softwareName} using all strategies. Last error: ${fallbackError.message}`;
+  
+  await captureMessage('extraction_all_strategies_failed', 'error', {
+    softwareName,
+    totalStrategies: extractionStrategies.length,
+    lastError: fallbackError.message,
+    rawDataLength: rawData.length,
+    errorStack: fallbackError.stack,
+  });
+  
+  throw new Error(errorMessage);
+}
+
+/** Calculate confidence score for extraction result */
+function calculateExtractionConfidence(
+  strategy: ExtractionStrategy,
+  release: ExtractedRelease,
+  rawData: string,
+): number {
+  let confidence = strategy.weight;
+
+  // Increase confidence for valid categories
+  if (release.category && isReleaseCategory(release.category)) {
+    confidence += 0.1;
+  } else {
+    confidence -= 0.2; // penalize invalid categories
+  }
+
+  // Increase confidence for version numbers
+  const versionRegex = /^\d+\.\d+(\.\d+)?([-.][a-zA-Z0-9]+)?$/;
+  if (versionRegex.test(release.version)) {
+    confidence += 0.15;
+  } else if (!release.version || release.version.length === 0) {
+    confidence -= 0.3; // heavily penalize missing or invalid versions
+  }
+
+  // Increase confidence for genuine updates
+  if (release.isGenuineUpdate) {
+    confidence += 0.1;
+  } else {
+    confidence -= 0.2; // penalize non-genuine updates
+  }
+
+  // Increase confidence for substantial data
+  if (rawData.length > 1000) {
+    confidence += 0.05;
+  }
+
+  // Normalize to 0-1 range
+  return Math.max(0, Math.min(1, confidence));
+}
+
+/** Categorize extraction errors for better monitoring and alerting */
+function categorizeExtractionError(strategy: ExtractionStrategy, error: Error, softwareName: string): void {
+  const errorLower = error.message.toLowerCase();
+  let category = 'unknown';
+  
+  if (errorLower.includes('rate') || errorLower.includes('quota')) {
+    category = 'rate_limit';
+  } else if (errorLower.includes('auth') || errorLower.includes('key') || errorLower.includes('api key')) {
+    category = 'authentication';
+  } else if (errorLower.includes('parse') || errorLower.includes('json') || errorLower.includes('malformed')) {
+    category = 'parsing';
+  } else if (errorLower.includes('timeout') || errorLower.includes('network') || errorLower.includes('fetch')) {
+    category = 'network';
+  } else if (errorLower.includes('validation') || errorLower.includes('schema')) {
+    category = 'validation';
+  } else if (errorLower.includes('model') || errorLower.includes('gemini') || errorLower.includes('ai')) {
+    category = 'ai_service';
+  } else if (errorLower.includes('permission') || errorLower.includes('access')) {
+    category = 'permission';
+  }
+
+  await captureMessage('extraction_error_categorized', 'warning', {
+    softwareName,
+    strategy: strategy.name,
+    errorCategory: category,
+    errorMessage: error.message,
+    errorType: error.constructor.name,
+  });
 }
 
 /** Bulk extraction for a full version history. */
@@ -244,4 +448,186 @@ function normalizeDate(value: unknown): string | null {
   // The prompt asks for ISO YYYY-MM-DD, but the model returns other formats often
   // enough to matter, and non-ISO forms parse as local midnight. See lib/dates.ts.
   return parseToIso(value);
+}
+
+/** Multi-strategy extraction with fallback chain and confidence scoring */
+export interface ExtractionStrategy {
+  name: string;
+  weight: number;
+  timeoutMs: number;
+  retryCount: number;
+}
+
+export interface ExtractionResult {
+  release: ExtractedRelease;
+  strategy: string;
+  confidence: number;
+  executionTimeMs: number;
+  sourceUrls?: string[];
+}
+
+export async function extractWithFallback(
+  softwareName: string,
+  rawData: string,
+  strategies?: ExtractionStrategy[],
+): Promise<ExtractionResult> {
+  const defaultStrategies: ExtractionStrategy[] = [
+    { name: 'gemini_direct', weight: 1.0, timeoutMs: 30000, retryCount: 2 },
+    { name: 'gemini_search_grounded', weight: 0.9, timeoutMs: 30000, retryCount: 1 },
+    { name: 'gemini_history', weight: 0.8, timeoutMs: 60000, retryCount: 2 },
+    { name: 'gemini_web_search', weight: 0.7, timeoutMs: 30000, retryCount: 1 },
+  ];
+
+  const extractionStrategies = strategies || defaultStrategies;
+  let lastError: Error | null = null;
+
+  for (const strategy of extractionStrategies) {
+    const startTime = Date.now();
+    let attempts = 0;
+    
+    while (attempts <= strategy.retryCount) {
+      attempts++;
+      try {
+        let result: ExtractedRelease;
+        let sourceUrls: string[] = [];
+
+        switch (strategy.name) {
+          case 'gemini_direct':
+            result = await extractRelease(softwareName, rawData);
+            sourceUrls = ['direct_extraction'];
+            break;
+          case 'gemini_search_grounded':
+            result = await extractRelease(softwareName, rawData);
+            sourceUrls = ['search_grounded'];
+            break;
+          case 'gemini_history':
+            result = await extractHistory(softwareName, rawData);
+            if (Array.isArray(result) && result.length > 0) {
+              result = result[0]; // Take the most recent
+            } else {
+              throw new Error('No history extracted');
+            }
+            sourceUrls = ['history_extraction'];
+            break;
+          case 'gemini_web_search':
+            result = await searchLatestRelease(softwareName);
+            sourceUrls = ['web_search'];
+            break;
+          default:
+            throw new Error(`Unknown extraction strategy: ${strategy.name}`);
+        }
+
+        const sanitized = sanitizeRelease(result);
+        const confidence = calculateExtractionConfidence(strategy, sanitized, rawData);
+        const executionTime = Date.now() - startTime;
+        await captureMessage('extraction_successful', 'info', {
+          softwareName,
+          strategy: strategy.name,
+          confidence,
+          executionTimeMs: executionTime,
+          version: sanitized.version,
+          category: sanitized.category,
+        });
+
+        return {
+          release: sanitized,
+          strategy: strategy.name,
+          confidence,
+          executionTimeMs: executionTime,
+          sourceUrls,
+        };
+
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        categorizeExtractionError(strategy, lastError, softwareName);
+        await captureMessage('extraction_strategy_failed', 'warning', {
+          softwareName,
+          strategy: strategy.name,
+          attempt: attempts,
+          maxAttempts: strategy.retryCount + 1,
+          error: lastError.message,
+        });
+        
+        if (attempts <= strategy.retryCount) {
+          const delayMs = 1000 * Math.pow(2, attempts - 1);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+  }
+
+  const fallbackError = lastError || new Error('All extraction strategies failed');
+  await captureMessage('extraction_all_strategies_failed', 'error', {
+    softwareName,
+    totalStrategies: extractionStrategies.length,
+    lastError: fallbackError.message,
+    rawDataLength: rawData.length,
+    errorStack: fallbackError.stack,
+  });
+  
+  throw new Error(`Failed to extract release for ${softwareName} using all strategies. Last error: ${fallbackError.message}`);
+}
+
+/** Calculate confidence score for extraction result */
+export function calculateExtractionConfidence(
+  strategy: ExtractionStrategy,
+  release: ExtractedRelease,
+  rawData: string,
+): number {
+  let confidence = strategy.weight;
+
+  if (release.category && isReleaseCategory(release.category)) {
+    confidence += 0.1;
+  } else {
+    confidence -= 0.2;
+  }
+
+  const versionRegex = /^\d+\.\d+(\.\d+)?([-.][a-zA-Z0-9]+)?$/;
+  if (versionRegex.test(release.version)) {
+    confidence += 0.15;
+  } else if (!release.version || release.version.length === 0) {
+    confidence -= 0.3;
+  }
+
+  if (release.isGenuineUpdate) {
+    confidence += 0.1;
+  } else {
+    confidence -= 0.2;
+  }
+
+  if (rawData.length > 1000) {
+    confidence += 0.05;
+  }
+
+  return Math.max(0, Math.min(1, confidence));
+}
+
+/** Categorize extraction errors for better monitoring and alerting */
+export function categorizeExtractionError(strategy: ExtractionStrategy, error: Error, softwareName: string): void {
+  const errorLower = error.message.toLowerCase();
+  let category = 'unknown';
+  
+  if (errorLower.includes('rate') || errorLower.includes('quota')) {
+    category = 'rate_limit';
+  } else if (errorLower.includes('auth') || errorLower.includes('key') || errorLower.includes('api key')) {
+    category = 'authentication';
+  } else if (errorLower.includes('parse') || errorLower.includes('json') || errorLower.includes('malformed')) {
+    category = 'parsing';
+  } else if (errorLower.includes('timeout') || errorLower.includes('network') || errorLower.includes('fetch')) {
+    category = 'network';
+  } else if (errorLower.includes('validation') || errorLower.includes('schema')) {
+    category = 'validation';
+  } else if (errorLower.includes('model') || errorLower.includes('gemini') || errorLower.includes('ai')) {
+    category = 'ai_service';
+  } else if (errorLower.includes('permission') || errorLower.includes('access')) {
+    category = 'permission';
+  }
+
+  await captureMessage('extraction_error_categorized', 'warning', {
+    softwareName,
+    strategy: strategy.name,
+    errorCategory: category,
+    errorMessage: error.message,
+    errorType: error.constructor.name,
+  });
 }

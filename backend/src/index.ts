@@ -1,5 +1,6 @@
 import { config } from './lib/config.js';
 import { log } from './lib/logging.js';
+import { initializeSentry } from './lib/sentry.js';
 import { createApiApp } from './routes/api.js';
 import { createNotifierApp, createPollerApp } from './routes/worker.js';
 
@@ -26,6 +27,9 @@ function appFor(service: string) {
   }
 }
 
+// Initialize Sentry error tracking
+initializeSentry();
+
 const app = appFor(config.service);
 
 const server = app.listen(config.port, () => {
@@ -46,3 +50,8 @@ function shutdown(signal: string) {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Shutdown Sentry when the process exits
+process.on('exit', () => {
+  // Sentry handles its own cleanup
+});
