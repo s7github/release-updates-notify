@@ -1,6 +1,18 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+// Built lazily: the SDK throws at construction when no key is set, which used to
+// crash the whole app on load. With no key, only the AI features fail, when used.
+let client: GoogleGenAI | null = null;
+const ai = {
+  get models() {
+    if (!client) {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error("Gemini is not configured: GEMINI_API_KEY is not set for this build.");
+      client = new GoogleGenAI({ apiKey });
+    }
+    return client.models;
+  },
+};
 
 export const discoverSources = async (query: string) => {
   const prompt = `You are a high-fidelity software discovery engine. 
