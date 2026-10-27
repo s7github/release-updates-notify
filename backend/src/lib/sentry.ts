@@ -10,6 +10,10 @@ import * as Sentry from '@sentry/node';
 import { config } from './config.js';
 import { log } from './logging.js';
 
+// OpenTelemetry span status codes (1 = ok, 2 = error), as used by Sentry v9 spans.
+const SPAN_STATUS_OK = 1;
+const SPAN_STATUS_ERROR = 2;
+
 export function initializeSentry(): void {
   if (config.service === 'api') {
     // Only initialize Sentry in the API service
@@ -28,7 +32,6 @@ export function initializeSentry(): void {
         release: process.env.SENTRY_RELEASE || 'unknown',
         
         // Performance monitoring
-        enableTracing: true,
         tracesSampleRate: 0.1,
         
         // Error filtering and categorization
@@ -49,12 +52,6 @@ export function initializeSentry(): void {
           return event;
         },
         
-        // Error grouping
-        errorGrouping: {
-          // Group errors by type and message
-          auto: true,
-        },
-        
         // Performance monitoring
         profilesSampleRate: 0.05,
       });
@@ -67,7 +64,7 @@ export function initializeSentry(): void {
 }
 
 export function captureException(error: Error, context?: Record<string, unknown>): void {
-  if (!Sentry.getCurrentHub()?.getClient()) {
+  if (!Sentry.getClient()) {
     log.warn('Sentry not initialized, capturing exception locally');
     log.error(error.message, error, context);
     return;
@@ -89,10 +86,10 @@ export function captureException(error: Error, context?: Record<string, unknown>
   });
 }
 
-export function captureMessage(message: string, level: 'error' | 'warning' | 'info' = 'error', context?: Record<string, unknown>): void {
-  if (!Sentry.getCurrentHub()?.getClient()) {
+export function captureMessage(message: string, level: 'error' | 'warning' | 'info' | 'debug' = 'error', context?: Record<string, unknown>): void {
+  if (!Sentry.getClient()) {
     log.warn('Sentry not initialized, capturing message locally');
-    log[level](message, context);
+    log[level === 'warning' ? 'warn' : level](message, context);
     return;
   }
 
@@ -103,27 +100,17 @@ export function captureMessage(message: string, level: 'error' | 'warning' | 'in
       });
     }
     
-    // Set the level
-    const severity = level.toUpperCase() as 'error' | 'warning' | 'info';
-    
-    // Capture the message
-    Sentry.captureMessage(message, severity);
+    Sentry.captureMessage(message, level);
   });
 }
 
 export function captureTransaction(name: string, op: string, tags?: Record<string, string>): void {
-  if (!Sentry.getCurrentHub()?.getClient()) {
+  if (!Sentry.getClient()) {
     log.warn('Sentry not initialized, capturing transaction locally');
     return;
   }
 
-  const transaction = Sentry.startTransaction({
-    name,
-    op,
-    tags,
-  });
-  
-  transaction.finish();
+  Sentry.startSpan({ name, op, attributes: tags }, () => undefined);
 }
 
 /** Enhanced extraction monitoring with detailed metrics and alerting */
@@ -145,8 +132,8 @@ export function captureExtractionMetrics(
   }
 ): void {
   const event = {
-    message: `Extraction ${operation}`, 
-    level: metrics.success ? 'info' : 'error',
+    message: `Extraction ${operation}`,
+    level: (metrics.success ? 'info' : 'error') as 'info' | 'error',
     category: 'extraction',
     ...metrics,
   };
@@ -263,7 +250,7 @@ export function alertExtractionQualityIssue(
 }
 
 export function addBreadcrumb(message: string, category: string = 'default', level: 'error' | 'warning' | 'info' | 'debug' = 'info', data?: Record<string, unknown>): void {
-  if (!Sentry.getCurrentHub()?.getClient()) {
+  if (!Sentry.getClient()) {
     // Don't log breadcrumbs when Sentry is not available
     return;
   }
@@ -278,7 +265,7 @@ export function addBreadcrumb(message: string, category: string = 'default', lev
 }
 
 export function setUserContext(userId?: string, email?: string): void {
-  if (!Sentry.getCurrentHub()?.getClient()) return;
+  if (!Sentry.getClient()) return;
 
   if (userId) {
     Sentry.setUser({
@@ -300,10 +287,10 @@ export function withSentry<T>(operation: () => Promise<T>, operationName: string
     async (span) => {
       try {
         const result = await operation();
-        span?.setStatus({ code: Sentry.SpanStatus.OK });
+        span?.setStatus({ code: SPAN_STATUS_OK });
         return result;
       } catch (error) {
-        span?.setStatus({ code: Sentry.SpanStatus.INTERNAL_ERROR });
+        span?.setStatus({ code: SPAN_STATUS_ERROR, message: 'internal_error' });
         if (error instanceof Error) {
           captureException(error, { operation: operationName, ...context });
         }
@@ -341,165 +328,27 @@ export function logDebug(message: string, context: Record<string, unknown> = {})
 }
 
 export function startHealthCheck(): void {
-  if (!Sentry.getCurrentHub()?.getClient()) return;
+  if (!Sentry.getClient()) return;
 
   // Create a health check transaction
-  Sentry.startTransaction({
-    name: 'health_check',
-    op: 'job',
-    tags: {
-      service: config.service,
-      type: 'periodic',
+  Sentry.startSpan(
+    {
+      name: 'health_check',
+      op: 'job',
+      attributes: { service: config.service, type: 'periodic' },
     },
-  });
+    () => undefined,
+  );
 }
 
 export function capturePerformanceMetric(name: string, value: number, unit: string = 'ms'): void {
-  if (!Sentry.getCurrentHub()?.getClient()) return;
+  if (!Sentry.getClient()) return;
 
-  Sentry.metrics?.incr(name, value, {
-    unit,
-    tags: {
-      service: config.service,
-    },
-  });
+  Sentry.setMeasurement(name, value, unit);
 }
 
 export function shutdown(): Promise<void> {
-  if (!Sentry.getCurrentHub()?.getClient()) return Promise.resolve();
+  if (!Sentry.getClient()) return Promise.resolve();
   
-  return Sentry.close();
-}
-
-/** Enhanced extraction monitoring with detailed metrics and alerting */
-export function captureExtractionMetrics(
-  operation: string,
-  metrics: {
-    softwareName: string;
-    strategy?: string;
-    confidence?: number;
-    executionTimeMs?: number;
-    sourceCount?: number;
-    success: boolean;
-    error?: string;
-    errorCategory?: 'rate_limit' | 'authentication' | 'parsing' | 'network' | 'validation' | 'ai_service' | 'permission' | 'unknown';
-    version?: string;
-    category?: string;
-    isDuplicate?: boolean;
-    manualReviewRequired?: boolean;
-  }
-): void {
-  const event = {
-    message: `Extraction ${operation}`, 
-    level: metrics.success ? 'info' : 'error',
-    category: 'extraction',
-    ...metrics,
-  };
-
-  captureMessage(event.message, event.level, {
-    operation,
-    softwareName: metrics.softwareName,
-    strategy: metrics.strategy,
-    confidence: metrics.confidence,
-    executionTimeMs: metrics.executionTimeMs,
-    sourceCount: metrics.sourceCount,
-    success: metrics.success,
-    error: metrics.error,
-    errorCategory: metrics.errorCategory,
-    version: metrics.version,
-    category: metrics.category,
-    isDuplicate: metrics.isDuplicate,
-    manualReviewRequired: metrics.manualReviewRequired,
-    timestamp: new Date().toISOString(),
-  });
-
-  if (!metrics.success && metrics.error) {
-    const error = new Error(metrics.error);
-    captureException(error, {
-      operation,
-      softwareName: metrics.softwareName,
-      strategy: metrics.strategy,
-      errorCategory: metrics.errorCategory,
-      confidence: metrics.confidence,
-      executionTimeMs: metrics.executionTimeMs,
-      version: metrics.version,
-      category: metrics.category,
-      sourceCount: metrics.sourceCount,
-      manualReviewRequired: metrics.manualReviewRequired,
-    });
-  }
-}
-
-/** Monitor extraction pipeline performance and reliability */
-export function captureExtractionPipelineMetrics(
-  metrics: {
-    totalSoftwareProcessed: number;
-    totalExtractionAttempts: number;
-    successfulExtractions: number;
-    failedExtractions: number;
-    averageConfidence: number;
-    averageExecutionTime: number;
-    duplicateRate: number;
-    manualReviewQueueSize: number;
-    sourceRotationCount: number;
-    lastHealthCheck: string;
-  }
-): void {
-  captureMessage('extraction_pipeline_metrics', 'info', {
-    ...metrics,
-    pipelineHealth: calculatePipelineHealth(metrics),
-    timestamp: new Date().toISOString(),
-  });
-}
-
-function calculatePipelineHealth(metrics: {
-  totalSoftwareProcessed: number;
-  totalExtractionAttempts: number;
-  successfulExtractions: number;
-  failedExtractions: number;
-  averageConfidence: number;
-  averageExecutionTime: number;
-  duplicateRate: number;
-  manualReviewQueueSize: number;
-  sourceRotationCount: number;
-}): number {
-  const successRate = metrics.totalExtractionAttempts > 0 
-    ? metrics.successfulExtractions / metrics.totalExtractionAttempts 
-    : 0;
-  
-  const confidenceScore = metrics.averageConfidence;
-  const performanceScore = Math.max(0, 1 - (metrics.averageExecutionTime / 60000));
-  const duplicateScore = Math.max(0, 1 - metrics.duplicateRate);
-  const manualReviewScore = Math.max(0, 1 - (metrics.manualReviewQueueSize / 100));
-  
-  return (successRate * 0.3 + confidenceScore * 0.25 + performanceScore * 0.2 + 
-          duplicateScore * 0.15 + manualReviewScore * 0.1);
-}
-
-/** Alert on extraction quality issues */
-export function alertExtractionQualityIssue(
-  issue: {
-    type: 'low_confidence' | 'high_duplicate_rate' | 'manual_review_backlog' | 'source_rotation_required' | 'performance_degradation';
-    severity: 'warning' | 'error' | 'critical';
-    softwareId?: string;
-    softwareName?: string;
-    metricValue: number;
-    threshold: number;
-    details?: string;
-  }
-): void {
-  const alertMessage = `Extraction Quality Alert: ${issue.type}`;
-  const alertLevel = issue.severity === 'critical' ? 'error' : issue.severity;
-  
-  captureMessage(alertMessage, alertLevel, {
-    alertType: issue.type,
-    severity: issue.severity,
-    softwareId: issue.softwareId,
-    softwareName: issue.softwareName,
-    metricValue: issue.metricValue,
-    threshold: issue.threshold,
-    details: issue.details,
-    timestamp: new Date().toISOString(),
-    requiresAction: issue.severity === 'critical',
-  });
+  return Sentry.close().then(() => undefined);
 }

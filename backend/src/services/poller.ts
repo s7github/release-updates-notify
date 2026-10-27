@@ -4,6 +4,7 @@ import { Collections, db } from '../lib/firebase.js';
 import { log } from '../lib/logging.js';
 import { captureException, captureMessage } from '../lib/sentry.js';
 import { isNewerThan, releaseDocumentId } from '../lib/version.js';
+import { isReleaseCategory } from '../lib/types.js';
 import type {
   ExtractedRelease,
   MetadataLearnings,
@@ -295,34 +296,6 @@ export function getExtractionMetrics(softwareId: string): {
 
 /** Helper function to calculate basic confidence for fallback results */
 export function calculateBasicConfidence(release: ExtractedRelease, rawData: string): number {
-  let confidence = 0.5; // Base confidence for fallback
-
-  // Increase confidence for valid version
-  if (release.version && release.version.length > 0) {
-    confidence += 0.2;
-  }
-
-  // Increase confidence for valid category
-  if (release.category && isReleaseCategory(release.category)) {
-    confidence += 0.15;
-  }
-
-  // Increase confidence for genuine update flag
-  if (release.isGenuineUpdate) {
-    confidence += 0.15;
-  }
-
-  // Increase confidence for substantial data
-  if (rawData.length > 500) {
-    confidence += 0.1;
-  }
-
-  // Normalize to 0-1 range
-  return Math.max(0, Math.min(1, confidence));
-}
-
-/** Helper function to calculate basic confidence for fallback results */
-function calculateBasicConfidence(release: ExtractedRelease, rawData: string): number {
   let confidence = 0.5; // Base confidence for fallback
 
   // Increase confidence for valid version

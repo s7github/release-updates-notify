@@ -4,6 +4,7 @@ import { requireAuth } from '../lib/auth.js';
 import { config } from '../lib/config.js';
 import { Collections, db } from '../lib/firebase.js';
 import { log } from '../lib/logging.js';
+import { captureException } from '../lib/sentry.js';
 import { consumeQuota } from '../lib/rateLimit.js';
 import { discoverSources } from '../services/gemini.js';
 import { createTask } from '../services/tasks.js';
@@ -156,6 +157,10 @@ export function createApiApp(): Express {
   // Last-resort handler. Without it an unhandled rejection returns an Express
   // stack trace to the client, which is an information leak.
   app.use((error: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    captureException(error, {
+      operation: 'unhandledApiError',
+      service: 'api',
+    });
     log.error('unhandled api error', error);
     res.status(500).json({ error: 'Internal error' });
   });

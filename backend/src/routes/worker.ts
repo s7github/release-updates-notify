@@ -1,6 +1,7 @@
 import express, { type Express } from 'express';
 import { decodePubSubMessage, requirePubSubToken } from '../lib/auth.js';
 import { log } from '../lib/logging.js';
+import { captureException } from '../lib/sentry.js';
 import { fanOutRelease } from '../services/notifier.js';
 import { enqueueDuePolls, pollHistory, pollSoftware } from '../services/poller.js';
 import type { PollRequestMessage, ReleasePublishedMessage } from '../lib/types.js';
@@ -42,6 +43,12 @@ export function createPollerApp(): Express {
         res.json(result);
       }
     } catch (error) {
+      captureException(error as Error, {
+        softwareId: message.softwareId,
+        taskId: message.taskId,
+        operation: 'pollSoftware',
+        service: 'poller',
+      });
       log.error('poll failed', error, { softwareId: message.softwareId });
       // 5xx so Pub/Sub retries with backoff. A vendor site being down for an
       // hour then costs nothing and loses no jobs.
@@ -56,6 +63,10 @@ export function createPollerApp(): Express {
       const count = await enqueueDuePolls(minutes);
       res.json({ enqueued: count });
     } catch (error) {
+      captureException(error as Error, {
+        operation: 'enqueueDuePolls',
+        service: 'poller',
+      });
       log.error('sweep failed', error);
       res.status(500).json({ error: 'Sweep failed' });
     }
@@ -83,6 +94,12 @@ export function createNotifierApp(): Express {
       const result = await fanOutRelease(message);
       res.json(result);
     } catch (error) {
+      captureException(error as Error, {
+        softwareId: message.softwareId,
+        version: message.version,
+        operation: 'fanOutRelease',
+        service: 'notifier',
+      });
       log.error('fan-out failed', error, { softwareId: message.softwareId });
       res.status(500).json({ error: 'Fan-out failed' });
     }
