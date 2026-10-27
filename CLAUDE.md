@@ -167,3 +167,5 @@ rules all exist and are verified to build and pass their tests. **None of it has
 been deployed, and the app has never been run on a device.** Do not assume a
 feature works because a screen for it exists, or that a service works because it
 compiles.
+
+@AGENTS.md

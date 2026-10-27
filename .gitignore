@@ -63,3 +63,7 @@ verify*.log
 rules*.log
 fix*.log
 web-build.log
+
+# ---- Local tooling ----
+.serena/
+launchers.json

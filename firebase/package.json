@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Firestore security rules, indexes, and their tests.",
   "scripts": {
+    "preinstall": "node -e \"if(!/pnpm/.test(process.env.npm_config_user_agent||'')){console.error('Use pnpm, not npm or yarn');process.exit(1)}\"",
     "test:rules": "firebase emulators:exec --only firestore --project updatenotify-test \"node --test test/*.test.js\"",
     "deploy:rules": "firebase deploy --only firestore:rules",
     "deploy:indexes": "firebase deploy --only firestore:indexes",

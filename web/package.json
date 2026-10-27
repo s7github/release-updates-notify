@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "preinstall": "node -e \"if(!/pnpm/.test(process.env.npm_config_user_agent||'')){console.error('Use pnpm, not npm or yarn');process.exit(1)}\"",
     "dev": "tsx server.ts",
     "build": "vite build",
     "start": "node server.js",
