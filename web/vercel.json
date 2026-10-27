@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "pnpm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/proxy.ts": { "maxDuration": 30 }
+  },
+  "rewrites": [
+    { "source": "/((?!api/|assets/|manifest\.json|sw\.js).*)", "destination": "/index.html" }
+  ]
+}

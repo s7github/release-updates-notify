@@ -313,6 +313,12 @@ cat docs/STATUS.md | grep -c "Current Status"
 
 ---
 
+## 1.7. Vercel deployment fixes (2026-10-27)
+
+- `web` (project `release-updates`, root dir `web/`): added `web/vercel.json` (SPA rewrite so react-router deep links work) and `web/api/proxy.ts` + `web/api/health.ts`. The `/api/proxy` handler moved to `web/lib/proxyHandler.ts`, shared with `server.ts`. Before, `/api/proxy` only existed in the local Express server, so every poll failed on Vercel.
+- `backend` (project `release-update-backend`, container build): the deploy failed on `pnpm install --frozen-lockfile` because `backend/pnpm-lock.yaml` lacked `@sentry/node` / `@sentry/types`. Lockfile regenerated.
+- Open: Vercel SSO protection is on for both projects (visitors hit a login wall); `GEMINI_API_KEY` is baked into the web bundle (violates the server-side-AI rule); `/api/proxy` is an open proxy; untracked `backend/src/test/sentry.test.ts` has a stray Python docstring and breaks `tsc`. ADR-0003 targets Cloud Run, not Vercel, for the backend.
+
 ## 2. Verified working
 
 Everything here was actually run, not assumed.
