@@ -67,3 +67,6 @@ web-build.log
 # ---- Local tooling ----
 .serena/
 launchers.json
+
+# Output of backend/scripts/seed-catalog.ts
+seed-catalog.jsonl

@@ -49,6 +49,16 @@ the browser's Gemini client and open proxy. Details below.
 - Next: parallelise probes; add endoflife.date and App Store sources; re-run
   "re-discover" on existing registry entries after deploy.
 
+### 2.0c Catalog seed script (ADR-0015)
+
+- `pnpm run seed:catalog` merges Homebrew formulae + casks and endoflife.date into
+  ~15k `master_registry` entries (~9.6k with a GitHub repo). Dry run by default;
+  `--write` imports, never overwrites. Dry run verified live; **`--write` has not
+  been run** (needs credentials for the `updatenotify` database).
+- Seeded entries are searchable but never auto-polled (null `lastCheck`), so a
+  followed seeded product has no release until polled. Open: trigger a first
+  poll on follow.
+
 ### 2.1 Subscription entitlements are now enforced
 
 - Added `backend/src/lib/entitlements.ts` (authoritative) and
