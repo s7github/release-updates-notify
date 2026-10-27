@@ -14,7 +14,7 @@
 param(
   [string]$Project = $(Read-Host 'GCP project id'),
   [string]$Region = 'europe-west1',
-  [string]$FirestoreDatabaseId = 'ai-studio-521db98c-8ec1-48c1-abff-6ca1d8854b1f',
+  [string]$FirestoreDatabaseId = 'updatenotify',
   [string]$SweepSchedule = '0 * * * *'
 )
 

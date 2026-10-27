@@ -1,5 +1,6 @@
 package com.updatenotify.core.network.di
 
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
@@ -25,13 +26,16 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
+    /** Named database inside the shared Firebase project; see ADR-0013. */
+    private const val FIRESTORE_DATABASE_ID = "updatenotify"
+
     @Provides
     @Singleton
     fun provideFirebaseAuth(): FirebaseAuth = FirebaseAuth.getInstance()
 
     @Provides
     @Singleton
-    fun provideFirestore(): FirebaseFirestore = FirebaseFirestore.getInstance().apply {
+    fun provideFirestore(): FirebaseFirestore = FirebaseFirestore.getInstance(FirebaseApp.getInstance(), FIRESTORE_DATABASE_ID).apply {
         // Room is the offline cache (ADR-0005), so Firestore's own disk cache would
         // be a second copy of the same data with its own eviction policy. Memory
         // cache only: enough to make listeners cheap, no duplicate persistence.

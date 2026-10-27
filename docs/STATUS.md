@@ -197,7 +197,9 @@ This is the single biggest gap against "data is live and real-time".
 - [x] `backend` and `web` deployed to Vercel from `main` (2026-10-27); re-run the
       admin smoke test against the live host.
 - [x] `firestore.rules` and `firestore.indexes.json` deployed to
-      `gen-lang-client-0040242541`. `admin_audit` needs no composite index
+      the previous AI Studio project's `(default)` database, which the app does not
+      use (the live app reads a named AI Studio database, so those rules never
+      reached live data). `admin_audit` needs no composite index
       (single-field ordering is automatic).
 - [ ] Add a TTL policy on `admin_audit.createdAt` if the log is expected to grow
       indefinitely.
@@ -245,9 +247,11 @@ This is the single biggest gap against "data is live and real-time".
 
 ## 7. Open questions for a human
 
-- **Which Firebase project is production?** The web config points at
-  `gen-lang-client-0040242541`, an AI Studio scratch project. A shipped product
-  probably wants a fresh project with proper IAM.
+- **Firebase project: decided (ADR-0013).** Move to the shared `trend-equity`
+  project (`gen-lang-client-0099813375`) using the named database `updatenotify`.
+  The database, web app, rules and indexes exist; the clients are switched on
+  branch `feat/trend-equity-database`, **not yet merged** because prod would then
+  read an empty database and the API has no credentials.
 - **Is the Vercel-hosted API the intended production host, or is Cloud Run?**
   ADR-0004 says Cloud Run for the pipeline. The `api` service is currently on
   Vercel, which is workable for HTTP but not for the Pub/Sub workers.
