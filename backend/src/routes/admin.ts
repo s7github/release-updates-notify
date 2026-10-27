@@ -10,7 +10,7 @@ import {
 import { Collections, db } from '../lib/firebase.js';
 import { log } from '../lib/logging.js';
 import { captureException } from '../lib/sentry.js';
-import { discoverSources } from '../services/gemini.js';
+import { discoverAll } from '../services/discovery.js';
 import { enqueuePoll } from '../services/pollRequests.js';
 
 /**
@@ -264,7 +264,7 @@ export function createAdminRouter(): Router {
     let warning: string | null = null;
     if (body.discover !== false) {
       try {
-        const discovery = await discoverSources(name);
+        const discovery = await discoverAll(name);
         const metadata = {
           name: discovery.name || name,
           vendor: discovery.vendor ?? null,
@@ -273,6 +273,8 @@ export function createAdminRouter(): Router {
           github_url: discovery.github_url ?? null,
           rss_url: discovery.rss_url ?? null,
           changelog_url: discovery.changelog_url ?? null,
+          npm_package: discovery.npm_package ?? null,
+          pypi_package: discovery.pypi_package ?? null,
           suggested_priority: discovery.suggested_priority ?? ['github', 'rss', 'html'],
           sourcesVerified: true,
           lastMetadataUpdate: now,
@@ -373,7 +375,7 @@ export function createAdminRouter(): Router {
     }
 
     try {
-      const discovered = await discoverSources(String(before.get('name') ?? softwareId));
+      const discovered = await discoverAll(String(before.get('name') ?? softwareId));
       const current = before.data() ?? {};
       const patch = {
         name: discovered.name || current.name,
@@ -383,6 +385,8 @@ export function createAdminRouter(): Router {
         github_url: discovered.github_url ?? current.github_url ?? null,
         rss_url: discovered.rss_url ?? current.rss_url ?? null,
         changelog_url: discovered.changelog_url ?? current.changelog_url ?? null,
+        npm_package: discovered.npm_package ?? current.npm_package ?? null,
+        pypi_package: discovered.pypi_package ?? current.pypi_package ?? null,
         suggested_priority: discovered.suggested_priority ?? current.suggested_priority ?? null,
         sourcesVerified: true,
         lastMetadataUpdate: new Date().toISOString(),

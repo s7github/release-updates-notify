@@ -35,6 +35,20 @@ the browser's Gemini client and open proxy. Details below.
 
 ## 2. What changed in this pass (2026-10-27)
 
+### 2.0b Deterministic source discovery (ADR-0014)
+
+- New `backend/src/services/discovery.ts` + `registries.ts`. Discovery now runs
+  the Gemini call, then fills gaps: homepage feed autodiscovery, changelog-page
+  probing, and npm/PyPI packages verified against the repo URL. Probes block
+  non-public hosts and unsafe redirects.
+- `gatherSources` fetches npm/PyPI as exact JSON sources. `master_registry`
+  gains `npm_package` / `pypi_package` (see DATA_MODEL).
+- Verified: lint, build, 76 tests pass; live probes resolved express (npm),
+  requests (PyPI), nodejs.org feed, obsidian.md changelog. **Not verified:**
+  end-to-end on Cloud Run, and the Gemini step itself (see 2.0).
+- Next: parallelise probes; add endoflife.date and App Store sources; re-run
+  "re-discover" on existing registry entries after deploy.
+
 ### 2.1 Subscription entitlements are now enforced
 
 - Added `backend/src/lib/entitlements.ts` (authoritative) and

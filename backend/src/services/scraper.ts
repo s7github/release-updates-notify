@@ -6,6 +6,7 @@ import { config } from '../lib/config.js';
 import { parseToIso } from '../lib/dates.js';
 import { log } from '../lib/logging.js';
 import type { Software } from '../lib/types.js';
+import { fetchNpmDoc, fetchPypiDoc, summariseNpm, summarisePypi } from './registries.js';
 
 /**
  * Source fetching, ported from `web/server.ts`.
@@ -234,9 +235,36 @@ export async function gatherSources(
   const chunks: SourceChunk[] = [];
   const maxChars = history ? config.limits.maxHistoryHtmlChars : config.limits.maxHtmlChars;
 
-  for (const tier of effectivePriority(software)) {
+  const tiers = effectivePriority(software);
+  // Registries are exact and nearly free, so a known package is always used even
+  // when the priority list (an older AI suggestion, say) predates it.
+  for (const registry of ['npm', 'pypi'] as const) {
+    if (software[`${registry}_package`] && !tiers.includes(registry)) tiers.push(registry);
+  }
+
+  for (const tier of tiers) {
     try {
-      if (tier === 'github' && software.github_url) {
+      if (tier === 'npm' && software.npm_package) {
+        const doc = await fetchNpmDoc(software.npm_package);
+        const summary = doc && summariseNpm(doc, history ? 50 : 3);
+        if (summary && summary.releases.length > 0) {
+          chunks.push({
+            source: 'npm',
+            url: `https://www.npmjs.com/package/${software.npm_package}`,
+            text: `[npm Registry]\n${JSON.stringify(summary)}`,
+          });
+        }
+      } else if (tier === 'pypi' && software.pypi_package) {
+        const doc = await fetchPypiDoc(software.pypi_package);
+        const summary = doc && summarisePypi(doc, history ? 50 : 3);
+        if (summary && summary.releases.length > 0) {
+          chunks.push({
+            source: 'pypi',
+            url: `https://pypi.org/project/${software.pypi_package}/`,
+            text: `[PyPI Registry]\n${JSON.stringify(summary)}`,
+          });
+        }
+      } else if (tier === 'github' && software.github_url) {
         const chunk = await fetchGitHubReleases(software.github_url, history ? 50 : 3);
         if (chunk) chunks.push(chunk);
       } else if (tier === 'rss' && software.rss_url) {

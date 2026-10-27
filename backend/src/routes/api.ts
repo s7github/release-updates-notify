@@ -5,7 +5,7 @@ import { Collections, db } from '../lib/firebase.js';
 import { log } from '../lib/logging.js';
 import { captureException } from '../lib/sentry.js';
 import { consumeQuota } from '../lib/rateLimit.js';
-import { discoverSources } from '../services/gemini.js';
+import { discoverAll } from '../services/discovery.js';
 import { enqueuePoll } from '../services/pollRequests.js';
 import { createAdminRouter } from './admin.js';
 
@@ -113,7 +113,7 @@ export function createApiApp(): Express {
         return;
       }
 
-      const discovered = await discoverSources(query);
+      const discovered = await discoverAll(query);
 
       await db().collection(Collections.MASTER_REGISTRY).doc(softwareId).set({
         name: discovered.name || query,
@@ -125,6 +125,8 @@ export function createApiApp(): Express {
         github_url: discovered.github_url ?? null,
         rss_url: discovered.rss_url ?? null,
         changelog_url: discovered.changelog_url ?? null,
+        npm_package: discovered.npm_package ?? null,
+        pypi_package: discovered.pypi_package ?? null,
         suggested_priority: discovered.suggested_priority ?? ['github', 'rss', 'html'],
         active: true,
         // Deliberately no lastVersion: the entry exists but has never been

@@ -45,6 +45,10 @@ export interface Software {
   github_url?: string | null;
   rss_url?: string | null;
   changelog_url?: string | null;
+  /** Package name on the npm registry, when the product ships as a package. */
+  npm_package?: string | null;
+  /** Project name on PyPI. */
+  pypi_package?: string | null;
   suggested_priority?: string[] | null;
   /** Admin override, comma-separated. Wins over suggested_priority. */
   priority_order?: string | null;
@@ -82,6 +86,8 @@ export interface DiscoveredSource {
   github_url: string | null;
   rss_url: string | null;
   changelog_url: string | null;
+  npm_package?: string | null;
+  pypi_package?: string | null;
   suggested_priority: string[];
 }
 
