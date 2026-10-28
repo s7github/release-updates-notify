@@ -21,7 +21,10 @@ param(
   [int]$ApiMinInstances = 0,
   # Optional: creates a budget with alerts at 40% and 100% of BudgetUsd.
   [string]$BillingAccount = '',
-  [int]$BudgetUsd = 25
+  [int]$BudgetUsd = 25,
+  # Skip every interactive prompt (the optional GitHub token). Add it later with
+  # `gcloud secrets create github-token` and re-run.
+  [switch]$NoPrompt
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,8 +33,18 @@ $sa = "updatenotify-run@$Project.iam.gserviceaccount.com"
 
 function Step($m) { Write-Host "`n== $m" -ForegroundColor Cyan }
 # For safety nets (backups, TTL, monitoring): warn instead of aborting the deploy.
-function Try-Gcloud { & gcloud @args; if ($LASTEXITCODE -ne 0) { Write-Warning "gcloud $($args -join ' ') failed; continue and set this up by hand" } }
-function Invoke-Gcloud { & gcloud @args; if ($LASTEXITCODE -ne 0) { throw "gcloud $($args -join ' ') failed" } }
+function Try-Gcloud {
+  $gArgs = $args
+  & { $ErrorActionPreference = 'Continue'; & gcloud @gArgs 2>&1 | ForEach-Object { Write-Host "$_" } }
+  if ($LASTEXITCODE -ne 0) { Write-Warning "gcloud $($args -join ' ') failed; continue and set this up by hand" }
+}
+# gcloud prints progress to stderr. Windows PowerShell 5.1 turns redirected stderr into
+# a terminating error under 'Stop', so only the exit code decides success here.
+function Invoke-Gcloud {
+  $gArgs = $args
+  & { $ErrorActionPreference = 'Continue'; & gcloud @gArgs 2>&1 | ForEach-Object { Write-Host "$_" } }
+  if ($LASTEXITCODE -ne 0) { throw "gcloud $($args -join ' ') failed" }
+}
 
 Step 'Enable APIs'
 Invoke-Gcloud services enable run.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com `
@@ -60,7 +73,7 @@ if (-not $exists) {
 Step 'GitHub token (optional)'
 # Anonymous GitHub is 60 requests/hour, which a catalog of any size exhausts.
 $hasGh = & gcloud secrets list --project $Project --filter 'name~github-token' --format 'value(name)'
-if (-not $hasGh) {
+if (-not $hasGh -and -not $NoPrompt) {
   $gh = Read-Host 'GitHub token, read-only public access (hidden, Enter to skip)' -AsSecureString
   $ghPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($gh))
   if ($ghPlain) {

@@ -1,0 +1,11 @@
+# What `gcloud builds submit` uploads. Without this file the upload includes
+# node_modules (~750 MiB) that the Docker build reinstalls anyway.
+.git/
+.gitignore
+node_modules/
+dist/
+.vercel/
+test/
+data/
+*.md
+.env*
