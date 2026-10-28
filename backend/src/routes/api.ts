@@ -3,6 +3,7 @@ import { requireAuth } from '../lib/auth.js';
 import { effectiveTier, limitsFor } from '../lib/entitlements.js';
 import { Collections, db } from '../lib/firebase.js';
 import { log } from '../lib/logging.js';
+import { evaluatePipelineHealth } from '../lib/retention.js';
 import { captureException } from '../lib/sentry.js';
 import { consumeQuota } from '../lib/rateLimit.js';
 import { geminiBlockedUntil, isQuotaError, recordGeminiBlock } from '../lib/geminiGate.js';
@@ -54,6 +55,22 @@ export function createApiApp(): Express {
 
   app.get('/healthz', (_req, res) => {
     res.json({ status: 'ok', service: 'api' });
+  });
+
+  /**
+   * Is the pipeline actually running? 503 when no sweep has been recorded for
+   * three hours, so a free Cloud Monitoring uptime check on this path becomes a
+   * dead-man's switch. Exposes only a timestamp.
+   */
+  app.get('/healthz/pipeline', async (_req, res) => {
+    try {
+      const snap = await db().collection(Collections.SYSTEM_STATE).doc('sweep').get();
+      const health = evaluatePipelineHealth(snap.get('lastSweepAt'), Date.now());
+      res.status(health.ok ? 200 : 503).json({ status: health.ok ? 'ok' : 'stale', ...health });
+    } catch (error) {
+      log.error('pipeline health read failed', error);
+      res.status(503).json({ status: 'unknown' });
+    }
   });
 
   /** Who am I, and what does my tier actually allow? */

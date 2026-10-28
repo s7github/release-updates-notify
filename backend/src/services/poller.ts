@@ -23,6 +23,12 @@ import {
 import { geminiBlockedUntil, isQuotaError, recordGeminiBlock } from '../lib/geminiGate.js';
 import { selectDue, type RegistryProbe } from '../lib/schedule.js';
 import { hashSources } from '../lib/sourceHash.js';
+import { expiresAt, RETENTION_DAYS } from '../lib/retention.js';
+import {
+  buildDeterministicRelease,
+  decideFromStructured,
+  type StructuredRelease,
+} from '../lib/deterministic.js';
 import { gatherSources, effectivePriority } from './scraper.js';
 import { progressReporter, updateTask } from './tasks.js';
 import { IntelligentCache } from '../lib/cache.js';
@@ -356,6 +362,42 @@ async function deferForQuota(
   return { softwareId, version: null, isNewVersion: false, notified: false };
 }
 
+/**
+ * The version, date and notification come from the source. The model, when it is
+ * available, only rewrites the notes into a summary, and any failure (quota
+ * included) keeps the deterministic release rather than losing the notification.
+ */
+async function summariseStructured(
+  software: Software,
+  found: StructuredRelease,
+): Promise<ExtractedRelease> {
+  const base = buildDeterministicRelease(software.name, found, software.lastVersion);
+  if (!config.aiSummaries || !found.notes) return base;
+  if (await geminiBlockedUntil()) return base;
+
+  try {
+    const polished = await extractRelease(
+      software.name,
+      `[Release notes for ${found.version}]\n${found.notes.slice(0, 8_000)}`,
+    );
+    if (!polished.summary) return base;
+    const keepOwnCategory =
+      base.category === 'Security Patches' || base.category === 'Major Milestone Update';
+    return {
+      ...base,
+      summary: polished.summary,
+      category: keepOwnCategory ? base.category : polished.category,
+    };
+  } catch (error) {
+    if (isQuotaError(error)) await recordGeminiBlock(error);
+    log.warn('summary polish failed; using the deterministic release', {
+      softwareId: software.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return base;
+  }
+}
+
 export interface PollResult {
   softwareId: string;
   version: string | null;
@@ -394,10 +436,15 @@ export async function pollSoftware(
       activePriority: effectivePriority(software),
     });
 
-    const chunks = await gatherSources(software);
+    const chunks = await gatherSources(software, {
+      githubEtag: force ? null : software.githubEtag,
+    });
     await report(40, `Gathered ${chunks.length} source(s)`, {
       sources: chunks.map((c) => c.source),
     });
+    await recordSourceHealth(software, chunks.length > 0);
+    const etag = githubEtagOf(chunks);
+    const etagUpdate = etag && etag !== software.githubEtag ? { githubEtag: etag } : {};
 
     const rawData = chunks.map((c) => c.text).join('\n\n---\n\n');
 
@@ -405,7 +452,7 @@ export async function pollSoftware(
     // it costs no model call at all.
     const sourceHash = hashSources(chunks);
     if (!force && chunks.length > 0 && software.lastSourceHash === sourceHash) {
-      await touchLastCheck(softwareId);
+      await touchLastCheck(softwareId, etagUpdate);
       await updateTask(taskId, {
         status: 'completed',
         progress: 100,
@@ -419,9 +466,37 @@ export async function pollSoftware(
       };
     }
 
+    // Gate 1b (ADR-0017): GitHub / npm / PyPI state their versions as JSON, so
+    // "is there anything new?" is a comparison. It needs no model, and neither
+    // does the notification, so a Gemini outage cannot hold a release back.
+    const decision = decideFromStructured(chunks, software.lastVersion);
+    // A 304 from GitHub means its releases are exactly what we stored the ETag
+    // for. It carries no versions, so it settles the question only when every
+    // other source is structured too (an HTML page could still be ahead).
+    const githubUnchanged =
+      chunks.some((c) => c.notModified) &&
+      chunks.every((c) => c.notModified || c.releases !== undefined);
+    if (!force && (decision.kind === 'unchanged' || (githubUnchanged && decision.kind !== 'new'))) {
+      await touchLastCheck(softwareId, etagUpdate);
+      await updateTask(taskId, {
+        status: 'completed',
+        progress: 100,
+        message: `Already up to date at ${software.lastVersion ?? 'the latest version'} (no model call)`,
+      });
+      return {
+        softwareId,
+        version: software.lastVersion ?? null,
+        isNewVersion: false,
+        notified: false,
+      };
+    }
+
     // Gate 2: the AI quota is spent. Stop here rather than retry into a wall.
+    // A structured detection does not need the model to proceed.
     const blockedUntil = await geminiBlockedUntil();
-    if (blockedUntil) return deferForQuota(softwareId, taskId, blockedUntil);
+    if (blockedUntil && decision.kind !== 'new') {
+      return deferForQuota(softwareId, taskId, blockedUntil);
+    }
 
     // Use enhanced multi-strategy extraction with fallback
     let extractionResult: ExtractedRelease | null = null;
@@ -429,8 +504,13 @@ export async function pollSoftware(
     let extractionStrategy = '';
     let extractionConfidence = 0;
     let extractionExecutionTime = 0;
-    
-    if (chunks.length > 0) {
+
+    if (decision.kind === 'new') {
+      await report(60, `New version ${decision.release.version} found from structured sources`);
+      extractionResult = await summariseStructured(software, decision.release);
+      extractionStrategy = 'deterministic';
+      extractionConfidence = 0.95;
+    } else if (chunks.length > 0) {
       await report(60, 'Extracting with multi-strategy fallback…');
       try {
         // Use the enhanced extraction with fallback strategies
@@ -616,6 +696,7 @@ export async function pollSoftware(
         lastCheck: new Date().toISOString(),
         // Only a real extraction from fetched sources earns a skip next time.
         lastSourceHash: chunks.length > 0 ? sourceHash : null,
+        ...etagUpdate,
       },
       { merge: true },
     );
@@ -834,15 +915,52 @@ async function applyLearnings(
     confidence: 0.9,
     applied: true,
     createdAt: new Date().toISOString(),
+    expiresAt: expiresAt(RETENTION_DAYS.learnings),
   });
 }
 
-async function touchLastCheck(softwareId: string): Promise<void> {
+async function touchLastCheck(
+  softwareId: string,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
   await db()
     .collection(Collections.MASTER_REGISTRY)
     .doc(softwareId)
-    .set({ lastCheck: new Date().toISOString() }, { merge: true })
+    .set({ lastCheck: new Date().toISOString(), ...extra }, { merge: true })
     .catch(() => undefined);
+}
+
+/** Consecutive empty polls before a product is flagged as having dead sources. */
+const FAILING_AFTER = 5;
+
+/**
+ * A source that yields nothing used to fail silently: `lastCheck` advanced and the
+ * product just never produced a release. Counting empty polls makes it visible.
+ */
+async function recordSourceHealth(software: Software, fetchedAnything: boolean): Promise<void> {
+  const previous = software.emptyPollCount ?? 0;
+  if (fetchedAnything && previous === 0 && software.sourceHealth !== 'failing') return;
+
+  const count = fetchedAnything ? 0 : previous + 1;
+  const health = count >= FAILING_AFTER ? 'failing' : 'ok';
+  await db()
+    .collection(Collections.MASTER_REGISTRY)
+    .doc(software.id)
+    .set({ emptyPollCount: count, sourceHealth: health }, { merge: true })
+    .catch(() => undefined);
+
+  if (health === 'failing' && software.sourceHealth !== 'failing') {
+    captureMessage('source_health_failing', 'warning', {
+      softwareId: software.id,
+      softwareName: software.name,
+      emptyPolls: count,
+    });
+  }
+}
+
+/** The ETag to store: the one GitHub just sent, else the one we already had. */
+function githubEtagOf(chunks: ReadonlyArray<{ source: string; etag?: string }>): string | undefined {
+  return chunks.find((c) => c.source === 'github' && c.etag)?.etag;
 }
 
 async function publishRelease(message: ReleasePublishedMessage, retryCount = 3, baseDelayMs = 1000): Promise<void> {
@@ -896,26 +1014,30 @@ async function publishRelease(message: ReleasePublishedMessage, retryCount = 3, 
  * Publishes to a queue rather than polling inline: 5,000 catalog items must not
  * become 5,000 concurrent scrapes (ADR-0004).
  */
-export async function enqueueDuePolls(olderThanMinutes: number): Promise<number> {
-  // While the AI quota is spent every poll would be deferred anyway.
+export async function enqueueDuePolls(olderThanMinutes?: number): Promise<number> {
+  // Detection from GitHub / npm / PyPI no longer needs the model, so a spent AI
+  // quota must not stop the sweep. Products that do need the model defer
+  // themselves when their poll runs.
   const blocked = await geminiBlockedUntil();
   if (blocked) {
-    log.warn('sweep skipped: AI quota paused', { until: blocked.toISOString() });
-    return 0;
+    log.warn('AI quota paused; sweeping anyway for structured sources', {
+      until: blocked.toISOString(),
+    });
   }
-
-  const cutoff = new Date(Date.now() - olderThanMinutes * 60_000).toISOString();
 
   // Only products somebody follows are polled. The catalog is ~15k seeded
   // entries; polling ones nobody is waiting for spends model calls for nothing.
   const followed = await followedSoftwareIds();
-  if (followed.size === 0) return 0;
+  if (followed.size === 0) {
+    await recordSweep(0, 0);
+    return 0;
+  }
 
   const refs = [...followed].map((id) => db().collection(Collections.MASTER_REGISTRY).doc(id));
   const probes: RegistryProbe[] = [];
   for (let i = 0; i < refs.length; i += 300) {
     const docs = await db().getAll(...refs.slice(i, i + 300), {
-      fieldMask: ['active', 'lastCheck'],
+      fieldMask: ['active', 'lastCheck', 'lastReleaseDate'],
     });
     for (const doc of docs) {
       if (!doc.exists) continue;
@@ -923,11 +1045,14 @@ export async function enqueueDuePolls(olderThanMinutes: number): Promise<number>
         id: doc.id,
         active: (doc.get('active') as boolean | undefined) ?? null,
         lastCheck: (doc.get('lastCheck') as string | undefined) ?? null,
+        lastReleaseDate: (doc.get('lastReleaseDate') as string | undefined) ?? null,
       });
     }
   }
 
-  const due = selectDue(probes, followed, cutoff, 500);
+  // No explicit interval means each product is polled at its own pace, from how
+  // recently it shipped (lib/schedule.ts). A manual sweep can force one interval.
+  const due = selectDue(probes, followed, Date.now(), 500, olderThanMinutes);
   const topic = client().topic(config.topics.pollRequests);
   await Promise.all(
     due.map((softwareId) =>
@@ -935,8 +1060,30 @@ export async function enqueueDuePolls(olderThanMinutes: number): Promise<number>
     ),
   );
 
-  log.info('enqueued due polls', { count: due.length, followed: followed.size, cutoff });
+  await recordSweep(due.length, followed.size);
+  log.info('enqueued due polls', {
+    count: due.length,
+    followed: followed.size,
+    interval: olderThanMinutes ?? 'adaptive',
+  });
   return due.length;
+}
+
+/**
+ * The sweep's heartbeat. If the scheduler dies or the poller crashes, nothing
+ * errors; the only symptom is that this stops advancing, which is what the
+ * `/healthz/pipeline` uptime check watches.
+ */
+async function recordSweep(enqueued: number, followed: number): Promise<void> {
+  await db()
+    .collection(Collections.SYSTEM_STATE)
+    .doc('sweep')
+    .set({ lastSweepAt: new Date().toISOString(), enqueued, followed }, { merge: true })
+    .catch((error) =>
+      log.warn('could not record sweep heartbeat', {
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
 }
 
 /**

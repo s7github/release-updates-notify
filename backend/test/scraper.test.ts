@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  compactGithubReleases,
   effectivePriority,
   githubApiUrl,
   parseLooseDate,
@@ -108,5 +109,29 @@ describe('scrapeVersionsFromHtml', () => {
   it('finds nothing in a page with no versions', () => {
     const html = '<body><h1>About us</h1><p>We make software.</p></body>';
     assert.deepEqual(scrapeVersionsFromHtml(html), []);
+  });
+});
+
+describe('compactGithubReleases', () => {
+  it('keeps the signal and drops the API noise', () => {
+    const [r] = compactGithubReleases(
+      [{
+        tag_name: 'v1.2.3',
+        name: 'One two three',
+        published_at: '2026-01-02T00:00:00Z',
+        prerelease: false,
+        body: 'x'.repeat(5000),
+        author: { login: 'bot', url: 'https://api.github.com/users/bot' },
+        assets: [{ id: 1 }],
+      }],
+      500,
+    );
+    assert.deepEqual(Object.keys(r ?? {}).sort(), ['body', 'date', 'name', 'prerelease', 'tag']);
+    assert.equal((r?.body as string).length, 500);
+    assert.equal(r?.tag, 'v1.2.3');
+  });
+
+  it('tolerates a release with no body', () => {
+    assert.equal(compactGithubReleases([{ tag_name: 'v1' }], 500)[0]?.body, null);
   });
 });

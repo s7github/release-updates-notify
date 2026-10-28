@@ -44,7 +44,14 @@ export const config = {
   /** Raises the GitHub rate limit from 60/hr to 5,000/hr. Optional but wanted. */
   githubToken: process.env.GITHUB_TOKEN ?? '',
 
-  model: optional('GEMINI_MODEL', 'gemini-2.0-flash'),
+  model: optional('GEMINI_MODEL', 'gemini-3.8-flash'),
+
+  /**
+   * When a release is found from structured sources, ask the model to polish the
+   * summary and category. Detection never depends on it; set to `false` to run
+   * with no model calls on the scheduled path at all (ADR-0017).
+   */
+  aiSummaries: optional('AI_SUMMARIES', 'true') !== 'false',
 
   limits: {
     /** FCM multicast cap. Not configurable by us — it is the API's limit. */

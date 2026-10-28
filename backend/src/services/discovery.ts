@@ -193,3 +193,41 @@ export async function enrichDiscovery(found: DiscoveredSource): Promise<Discover
 export async function discoverAll(query: string): Promise<DiscoveredSource> {
   return enrichDiscovery(await discoverSources(query));
 }
+
+export interface Rediscovery {
+  source: DiscoveredSource;
+  usedModel: boolean;
+  modelError: string | null;
+}
+
+/**
+ * Re-runs discovery for a product we already know. The model is the base layer,
+ * but a quota or outage there must not block a refresh: the existing record is
+ * a perfectly good starting point for the deterministic probes.
+ */
+export async function rediscover(
+  existing: Partial<DiscoveredSource> & { name: string },
+  model: (query: string) => Promise<DiscoveredSource> = discoverSources,
+): Promise<Rediscovery> {
+  try {
+    const found = await model(existing.name);
+    return { source: await enrichDiscovery(found), usedModel: true, modelError: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.warn('model discovery failed; falling back to the existing record', { error: message });
+    const base: DiscoveredSource = {
+      name: existing.name,
+      vendor: existing.vendor ?? null,
+      website: existing.website ?? null,
+      icon_url: existing.icon_url ?? null,
+      type: existing.type ?? 'software',
+      github_url: existing.github_url ?? null,
+      rss_url: existing.rss_url ?? null,
+      changelog_url: existing.changelog_url ?? null,
+      npm_package: existing.npm_package ?? null,
+      pypi_package: existing.pypi_package ?? null,
+      suggested_priority: existing.suggested_priority ?? [],
+    };
+    return { source: await enrichDiscovery(base), usedModel: false, modelError: message };
+  }
+}

@@ -4,6 +4,7 @@ import type { Element } from 'domhandler';
 import Parser from 'rss-parser';
 import { config } from '../lib/config.js';
 import { parseToIso } from '../lib/dates.js';
+import { versionFromLabel, type StructuredRelease } from '../lib/deterministic.js';
 import { log } from '../lib/logging.js';
 import type { Software } from '../lib/types.js';
 import { fetchNpmDoc, fetchPypiDoc, summariseNpm, summarisePypi } from './registries.js';
@@ -56,6 +57,37 @@ export interface SourceChunk {
   source: string;
   url: string;
   text: string;
+  /**
+   * Versions parsed from a JSON source (GitHub, npm, PyPI). Present only where the
+   * source states a version outright, so it can be compared without the model.
+   */
+  releases?: StructuredRelease[];
+  /** ETag the source sent (GitHub), stored so the next poll can ask "changed?". */
+  etag?: string;
+  /** The source answered 304: nothing changed since the stored ETag. */
+  notModified?: boolean;
+}
+
+/** GitHub Releases API objects -> comparable releases. Drafts are never real. */
+export function structuredFromGithub(
+  releases: Array<Record<string, unknown>>,
+): StructuredRelease[] {
+  const out: StructuredRelease[] = [];
+  for (const r of releases) {
+    if (r.draft === true) continue;
+    const version =
+      versionFromLabel(typeof r.tag_name === 'string' ? r.tag_name : null) ??
+      versionFromLabel(typeof r.name === 'string' ? r.name : null);
+    if (!version) continue;
+    const date = r.published_at ?? r.created_at;
+    out.push({
+      version,
+      releaseDate: typeof date === 'string' ? date : null,
+      notes: typeof r.body === 'string' && r.body.trim() ? r.body : null,
+      prerelease: r.prerelease === true,
+    });
+  }
+  return out;
 }
 
 /** Turns a repo URL into the Releases API path. Returns null if it is not one. */
@@ -68,9 +100,29 @@ export function githubApiUrl(repoUrl: string, perPage = 3): string | null {
   return `https://api.github.com/repos/${repoPath}/releases?per_page=${perPage}`;
 }
 
+/**
+ * Keeps only what extraction needs from a GitHub release. The raw API object is
+ * ~13 KB of URLs and author metadata around a few hundred bytes of signal, which
+ * made 50 releases ~650 KB: far beyond any context window, so history extraction
+ * saw only the first handful.
+ */
+export function compactGithubReleases(
+  releases: Array<Record<string, unknown>>,
+  bodyLimit: number,
+): Array<Record<string, unknown>> {
+  return releases.map((r) => ({
+    tag: r.tag_name,
+    name: r.name,
+    date: r.published_at ?? r.created_at,
+    prerelease: r.prerelease,
+    body: typeof r.body === 'string' ? r.body.slice(0, bodyLimit) : null,
+  }));
+}
+
 export async function fetchGitHubReleases(
   repoUrl: string,
   perPage = 3,
+  etag?: string | null,
 ): Promise<SourceChunk | null> {
   const apiUrl = githubApiUrl(repoUrl, perPage);
   if (!apiUrl) return null;
@@ -82,15 +134,32 @@ export async function fetchGitHubReleases(
   // Anonymous GitHub is 60 requests/hour, which a catalog of any size exhausts
   // immediately. A token raises it to 5,000.
   if (config.githubToken) headers.Authorization = `Bearer ${config.githubToken}`;
+  // A 304 is free against the rate limit and costs no parsing or model call.
+  if (etag) headers['If-None-Match'] = etag;
 
   const response = await axios.get(apiUrl, { ...REQUEST, headers });
+  if (response.status === 304 && etag) {
+    return {
+      source: 'github',
+      url: apiUrl,
+      text: '[GitHub Releases: not modified]',
+      etag,
+      notModified: true,
+    };
+  }
   const data = response.data;
   if (!Array.isArray(data) || data.length === 0) return null;
 
   return {
     source: 'github',
     url: apiUrl,
-    text: `[GitHub Releases]\n${JSON.stringify(data.slice(0, perPage))}`,
+    etag: typeof response.headers?.etag === 'string' ? response.headers.etag : undefined,
+    releases: structuredFromGithub(data.slice(0, perPage)),
+    // Latest-release polls get fuller notes; a 50-release history gets a short
+    // excerpt each so all of them fit.
+    text: `[GitHub Releases]\n${JSON.stringify(
+      compactGithubReleases(data.slice(0, perPage), perPage <= 3 ? 2_000 : 500),
+    )}`,
   };
 }
 
@@ -115,7 +184,15 @@ export async function fetchRss(feedUrl: string, limit = 3): Promise<SourceChunk 
   const items = feed.items?.slice(0, limit) ?? [];
   if (items.length === 0) return null;
 
-  return { source: 'rss', url: feedUrl, text: `[RSS Feed]\n${JSON.stringify(items)}` };
+  // Same reasoning as GitHub: feed items carry full HTML bodies and duplicate
+  // fields. Title, date, link and a text excerpt are what extraction uses.
+  const compact = items.map((i) => ({
+    title: i.title,
+    date: i.isoDate ?? i.pubDate,
+    link: i.link,
+    text: (i.contentSnippet ?? i.content ?? '').slice(0, limit <= 3 ? 2_000 : 500),
+  }));
+  return { source: 'rss', url: feedUrl, text: `[RSS Feed]\n${JSON.stringify(compact)}` };
 }
 
 export async function fetchHtml(pageUrl: string, maxChars: number): Promise<SourceChunk | null> {
@@ -229,7 +306,7 @@ export function parseLooseDate(raw: string): string {
  */
 export async function gatherSources(
   software: Software,
-  options: { history?: boolean } = {},
+  options: { history?: boolean; githubEtag?: string | null } = {},
 ): Promise<SourceChunk[]> {
   const history = options.history ?? false;
   const chunks: SourceChunk[] = [];
@@ -252,6 +329,7 @@ export async function gatherSources(
             source: 'npm',
             url: `https://www.npmjs.com/package/${software.npm_package}`,
             text: `[npm Registry]\n${JSON.stringify(summary)}`,
+            releases: summary.releases.map((r) => ({ ...r, notes: null })),
           });
         }
       } else if (tier === 'pypi' && software.pypi_package) {
@@ -262,10 +340,15 @@ export async function gatherSources(
             source: 'pypi',
             url: `https://pypi.org/project/${software.pypi_package}/`,
             text: `[PyPI Registry]\n${JSON.stringify(summary)}`,
+            releases: summary.releases.map((r) => ({ ...r, notes: null })),
           });
         }
       } else if (tier === 'github' && software.github_url) {
-        const chunk = await fetchGitHubReleases(software.github_url, history ? 50 : 3);
+        const chunk = await fetchGitHubReleases(
+          software.github_url,
+          history ? 50 : 3,
+          history ? null : options.githubEtag,
+        );
         if (chunk) chunks.push(chunk);
       } else if (tier === 'rss' && software.rss_url) {
         const chunk = await fetchRss(software.rss_url, history ? 50 : 3);

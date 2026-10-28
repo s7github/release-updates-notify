@@ -4,6 +4,7 @@ import { log } from '../lib/logging.js';
 import { captureException } from '../lib/sentry.js';
 import { fanOutRelease } from '../services/notifier.js';
 import { enqueueDuePolls, pollHistory, pollSoftware } from '../services/poller.js';
+import { reapStuckTasks } from '../services/tasks.js';
 import type { PollRequestMessage, ReleasePublishedMessage } from '../lib/types.js';
 
 /**
@@ -62,10 +63,21 @@ export function createPollerApp(): Express {
 
   /** Cloud Scheduler entry point: enqueue everything due. */
   app.post('/scheduler/sweep', requirePubSubToken, async (req, res) => {
-    const minutes = Number((req.body as { olderThanMinutes?: unknown })?.olderThanMinutes ?? 360);
+    // Absent means adaptive: each product is polled at its own pace.
+    const raw = (req.body as { olderThanMinutes?: unknown })?.olderThanMinutes;
+    const minutes = raw === undefined ? undefined : Number(raw);
     try {
-      const count = await enqueueDuePolls(minutes);
-      res.json({ enqueued: count });
+      const count = await enqueueDuePolls(
+        minutes !== undefined && Number.isFinite(minutes) && minutes > 0 ? minutes : undefined,
+      );
+      // Jobs that were dead-lettered never report again; close their tasks.
+      const reaped = await reapStuckTasks().catch((error) => {
+        log.warn('task reaper failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return 0;
+      });
+      res.json({ enqueued: count, reaped });
     } catch (error) {
       captureException(error as Error, {
         operation: 'enqueueDuePolls',

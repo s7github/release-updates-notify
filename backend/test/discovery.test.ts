@@ -5,6 +5,7 @@ import {
   isPublicHttpUrl,
   looksLikeChangelog,
   looksLikeFeed,
+  rediscover,
 } from '../src/services/discovery.ts';
 import {
   isValidNpmName,
@@ -142,5 +143,44 @@ describe('isValidNpmName', () => {
     assert.equal(isValidNpmName('@scope/pkg'), true);
     assert.equal(isValidNpmName('../etc'), false);
     assert.equal(isValidNpmName('Has Space'), false);
+  });
+});
+
+describe('rediscover', () => {
+  const existing = {
+    name: 'Audacity',
+    vendor: 'Muse Group',
+    website: null,
+    icon_url: null,
+    github_url: null,
+    rss_url: 'https://example.com/feed.xml',
+    changelog_url: null,
+  };
+
+  it('keeps the existing record and flags it when the model is unavailable', async () => {
+    const result = await rediscover(existing, async () => {
+      throw new Error('429 RESOURCE_EXHAUSTED');
+    });
+    assert.equal(result.usedModel, false);
+    assert.match(result.modelError ?? '', /429/);
+    assert.equal(result.source.name, 'Audacity');
+    assert.equal(result.source.rss_url, 'https://example.com/feed.xml');
+  });
+
+  it('uses the model result when it answers', async () => {
+    const result = await rediscover(existing, async (query) => ({
+      name: query,
+      vendor: 'Muse Group',
+      website: null,
+      icon_url: null,
+      type: 'software',
+      github_url: 'https://github.com/audacity/audacity',
+      rss_url: null,
+      changelog_url: null,
+      suggested_priority: [],
+    }));
+    assert.equal(result.usedModel, true);
+    assert.equal(result.modelError, null);
+    assert.equal(result.source.github_url, 'https://github.com/audacity/audacity');
   });
 });

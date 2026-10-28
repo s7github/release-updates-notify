@@ -57,6 +57,12 @@ export interface Software {
   lastCheck?: string | null;
   /** Fingerprint of the sources the last successful extraction saw. */
   lastSourceHash?: string | null;
+  /** ETag of the last GitHub Releases response, so an unchanged repo costs a 304. */
+  githubEtag?: string | null;
+  /** Consecutive polls that fetched nothing from any source. */
+  emptyPollCount?: number | null;
+  /** `failing` once a product has returned nothing for several polls in a row. */
+  sourceHealth?: 'ok' | 'failing' | null;
   historyMaxCount?: number | null;
   historyMinDate?: string | null;
 }

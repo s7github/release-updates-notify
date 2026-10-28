@@ -1,5 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { Collections, db } from '../lib/firebase.js';
+import { expiresAt, RETENTION_DAYS } from '../lib/retention.js';
 
 /**
  * Pipeline job progress, written to `background_tasks`.
@@ -29,8 +30,44 @@ export async function createTask(input: {
     requestedBy: input.requestedBy ?? null,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
+    // Firestore TTL deletes the task after this; nobody reads one past a few weeks.
+    expiresAt: expiresAt(RETENTION_DAYS.tasks),
   });
   return ref.id;
+}
+
+/**
+ * Marks tasks that stopped making progress as failed.
+ *
+ * A job that exhausts its Pub/Sub retries is dead-lettered and never reports
+ * again, so its task would sit at `processing` forever and the console would show
+ * it as running. Run from the hourly sweep.
+ */
+export async function reapStuckTasks(olderThanMinutes = 30, limit = 200): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanMinutes * 60_000);
+  const snap = await db()
+    .collection(Collections.BACKGROUND_TASKS)
+    .where('status', 'in', ['pending', 'processing'])
+    .where('updatedAt', '<', cutoff)
+    .limit(limit)
+    .get();
+  if (snap.empty) return 0;
+
+  const batch = db().batch();
+  for (const doc of snap.docs) {
+    batch.set(
+      doc.ref,
+      {
+        status: 'failed' satisfies TaskStatus,
+        error: 'Timed out',
+        message: `No progress for ${olderThanMinutes} minutes; the job was abandoned.`,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+  await batch.commit();
+  return snap.size;
 }
 
 export async function updateTask(

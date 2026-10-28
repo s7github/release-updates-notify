@@ -9,9 +9,10 @@ import {
 } from '../lib/adminValidation.js';
 import { Collections, db } from '../lib/firebase.js';
 import { log } from '../lib/logging.js';
+import { expiresAt, RETENTION_DAYS } from '../lib/retention.js';
 import { captureException } from '../lib/sentry.js';
 import { searchFields } from '../lib/searchKey.js';
-import { discoverAll } from '../services/discovery.js';
+import { discoverAll, rediscover } from '../services/discovery.js';
 import { followedSoftwareIds } from '../services/poller.js';
 import { enqueuePoll } from '../services/pollRequests.js';
 
@@ -51,6 +52,7 @@ async function audit(
       before,
       after,
       createdAt: new Date().toISOString(),
+      expiresAt: expiresAt(RETENTION_DAYS.audit),
     });
   } catch (error) {
     // An audit write failure must not make the operation look failed when it
@@ -383,8 +385,11 @@ export function createAdminRouter(): Router {
     }
 
     try {
-      const discovered = await discoverAll(String(before.get('name') ?? softwareId));
       const current = before.data() ?? {};
+      const { source: discovered, usedModel, modelError } = await rediscover({
+        ...current,
+        name: String(current.name ?? softwareId),
+      });
       const patch = {
         name: discovered.name || current.name,
         vendor: discovered.vendor ?? current.vendor ?? null,
@@ -396,12 +401,23 @@ export function createAdminRouter(): Router {
         npm_package: discovered.npm_package ?? current.npm_package ?? null,
         pypi_package: discovered.pypi_package ?? current.pypi_package ?? null,
         suggested_priority: discovered.suggested_priority ?? current.suggested_priority ?? null,
-        sourcesVerified: true,
+        // Only claim verification when the model actually confirmed the sources.
+        sourcesVerified: usedModel ? true : Boolean(current.sourcesVerified),
         lastMetadataUpdate: new Date().toISOString(),
       };
       await ref.set(patch, { merge: true });
       await audit(req, 'registry.discover', 'software', softwareId, current, patch);
-      res.json({ softwareId, ...patch });
+      res.json({
+        softwareId,
+        ...patch,
+        ...(usedModel
+          ? {}
+          : {
+              warning:
+                'AI lookup is unavailable (likely quota), so only direct probes of the existing sources ran.',
+              modelError,
+            }),
+      });
     } catch (error) {
       captureException(error as Error, { operation: 'adminResync', softwareId });
       res.status(502).json({ error: 'Source discovery failed' });
