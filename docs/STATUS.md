@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-10-27
+**Last updated:** 2026-10-28
 **Updated by:** the subscription/admin/real-time pass
 
 > **If you are an agent or a person picking this up cold, this is the file that
@@ -34,6 +34,15 @@ the browser's Gemini client and open proxy. Details below.
 ---
 
 ## 2. What changed in this pass (2026-10-27)
+
+### 2.0 Gemini default model was retired
+
+- Admin "Add software" reported "source discovery failed" for every item. Cloud
+  Run logs showed Gemini returning 404: `gemini-2.0-flash` is no longer
+  available. The default in `backend/src/lib/config.ts` is now `gemini-3.8-flash`
+  (override with `GEMINI_MODEL`). Needs a redeploy to take effect; search-grounded
+  discovery on the new model is not yet confirmed live. Software already added
+  without sources needs "re-discover" (or re-adding) after the redeploy.
 
 ### 2.0b Deterministic source discovery (ADR-0014)
 
@@ -76,6 +85,64 @@ the browser's Gemini client and open proxy. Details below.
 - Not done (live infra, needs approval): `api` `minScale` 1 to 0, poller
   `max-instances`/`concurrency`, Pub/Sub retry backoff, budget alerts. Commands are
   in the session summary.
+
+### 2.0g Ops hardening (ADR-0018)
+
+- Adaptive poll cadence, GitHub ETag/304, sweep no longer paused by the AI quota,
+  sweep heartbeat + `/healthz/pipeline`, stuck-task reaper, source-health flag,
+  TTL `expiresAt` fields, index exemptions and a reaper index.
+- Web: the admin registry grid now lists 100 entries live and searches the rest
+  (it used to read all ~15k documents per page load); dashboard `in` chunks are 30.
+- `deploy-gcp.ps1`: api min 0, worker caps, 300 s ack deadline with backoff,
+  dead-letter IAM + pull subscription, scheduler retries, optional GitHub token,
+  PITR, daily backup, TTL policies, uptime check, optional budget.
+- Open: services are in europe-west1, the database in europe-west4 (live migration).
+
+### 2.0f Version detection without the model (ADR-0017)
+
+- `backend/src/lib/deterministic.ts` compares versions from GitHub, npm and PyPI
+  JSON against `lastVersion`. `unchanged` ends the poll with no model call; `new`
+  is built from the source and notified even when Gemini is blocked. The model now
+  only polishes the summary (`AI_SUMMARIES=false` turns that off). RSS/HTML never
+  decide a version.
+- Verified: lint clean, full backend suite green with 16 new tests (version
+  parsing, prerelease/draft handling, decision, classification, GitHub parsing).
+  **Not verified:** a live poll against GitHub/npm; not deployed, so production
+  still runs the old image.
+- Next: ETag / `If-None-Match` on GitHub, adaptive poll cadence per product, and a
+  `deterministic` strategy counter so the saving is measurable.
+
+### 2.0d Music software seeded; release notes NOT yet
+
+- **Project id correction:** the Firebase project displayed as "trend-equity" has
+  id `gen-lang-client-0099813375`; no project has the id `trend-equity`. Use the id
+  in `GOOGLE_CLOUD_PROJECT` / `--project`.
+- The catalog seed was **written**: `master_registry` is now ~15.1k entries.
+- `pnpm run seed:music` wrote 50 curated music entries (`tags: ["music"]`), 25 with
+  a live-verified GitHub / feed / changelog source; the rest are website-only.
+- **Release-note backfill is partial.** `GEMINI_MODEL=gemini-3.8-flash` is now set on
+  the poller (revision 00004) and extraction works: Audacity saved 5 releases,
+  Dexed 1. The rest hit the **Gemini free-tier daily quota**
+  (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`, resets ~11h later), so ~19
+  queued jobs retry then dead-letter and their tasks stay `processing`. Five jobs
+  (musescore, zynaddsubfx, cardinal, carla, juce) failed earlier with GitHub 403:
+  the poller has no `GITHUB_TOKEN`. Re-run `pnpm run backfill:music` after the quota
+  resets or billing is enabled; it skips entries that already have notes.
+
+### 2.0e Admin fixes: registry search blank screen, refresh "source discovery failed"
+
+- **Blank screen on search:** `RegistryManager` filtered with `row.vendor.toLowerCase()`;
+  seeded entries have no vendor, so any 1-2 character query that missed the name
+  threw during render and unmounted the tree. Filter and avatar are now null-safe.
+- **"Source discovery failed":** Cloud Run `updatenotify-api` logs show Gemini
+  **429 RESOURCE_EXHAUSTED** (free-tier quota) inside `discoverSources`; the whole
+  refresh 502'd. New `rediscover()` (`services/discovery.ts`) falls back to
+  deterministic probes seeded from the existing record when the model fails; the
+  route returns a `warning` instead of an error and does not set
+  `sourcesVerified`. The web toasts show the warning.
+- The `api` revision (00003) also has no `GEMINI_MODEL`, so it still defaults to the
+  retired model until redeployed. **Not deployed; fixes unverified live.**
+  Real fix for the quota is enabling billing on the Gemini key.
 
 ### 2.1 Subscription entitlements are now enforced
 

@@ -112,6 +112,7 @@ Document ID is a URL-safe slug (`fl-studio`, `suno`, `macos`).
 | `npm_package` | string? | npm package name; set only when the registry entry declares the same repo as `github_url` (ADR-0014) |
 | `pypi_package` | string? | PyPI project name; same verification rule |
 | `seededFrom` | string[]? | Present on bulk-seeded entries: `homebrew-formula`, `homebrew-cask`, `endoflife` (ADR-0015). `sourcesVerified` stays `false` until a poll succeeds |
+| `tags` | string[]? | Free-form grouping; set to `["music"]` by `seed:music` (curated list in `backend/data/music-software.json`, sources verified live) |
 | `searchKey` | string | Lowercased, punctuation-collapsed `name`. Prefix search: `>= q` and `<= q + U+F8FF`. Written by the backend (ADR-0016) |
 | `searchTokens` | string[] | Up to 8 unique lowercase words of `name`, for `array-contains` whole-word search |
 | `suggested_priority` | string[]? | AI-proposed source order |
@@ -121,6 +122,9 @@ Document ID is a URL-safe slug (`fl-studio`, `suno`, `macos`).
 | `lastReleaseDate` | ISO string? | |
 | `lastCheck` | ISO string? | Last poll attempt, successful or not |
 | `lastSourceHash` | string? | SHA-256 of the sources the last successful extraction saw. An equal hash on the next poll skips the model (ADR-0016) |
+| `githubEtag` | string? | ETag of the last GitHub Releases response. Sent as `If-None-Match`; a 304 is free against the rate limit (ADR-0018) |
+| `emptyPollCount` | int? | Consecutive polls that fetched nothing from any source; reset on success |
+| `sourceHealth` | `ok` | `failing`? | `failing` once `emptyPollCount` reaches 5. Visible dead sources instead of silence |
 | **History scrape settings** | | |
 | `historyMaxCount` | int? | Cap on historical records to ingest |
 | `historyMinDate` | ISO string? | Ignore releases before this |
@@ -207,6 +211,7 @@ than an indeterminate spinner.
 | `createdAt` / `updatedAt` | Firestore `Timestamp` | **Not ISO strings here** — inherited inconsistency |
 | `details` | map? | `sourceUrl`, `currentAction`, `foundCount`, `completedCount`, `samples[]`, `activePriority[]`, `settings{maxCount,minDate}` |
 | `requestedBy` | string? | **New.** UID that enqueued it, so a user can watch their own task |
+| `expiresAt` | Firestore `Timestamp` | Created + 30 days. A TTL policy deletes the task (free). Stuck tasks are failed by the sweep's reaper after 30 minutes without progress |
 
 **Client access: read own tasks only; no writes.** The web app wrote these
 directly; that grant is removed. Tasks are created by the `api` service on
@@ -229,6 +234,7 @@ given; applying those is what makes the registry improve as it runs.
 | `impact` | string | |
 | `confidence` | float | 0.0–1.0 |
 | `applied` | bool | Whether the change was written to `master_registry` |
+| `expiresAt` | Firestore `Timestamp` | Created + 180 days, deleted by TTL |
 | `createdAt` | ISO string | |
 
 **Admin read only. No client writes.**
@@ -268,6 +274,7 @@ is what makes "the admin can change anything" accountable.
 | `before` | map? | Values before the change |
 | `after` | map? | Values after the change |
 | `createdAt` | ISO string | |
+| `expiresAt` | Firestore `Timestamp` | Created + 400 days, deleted by TTL |
 
 **Read: admin only. Write: never from a client, including an admin.** The API
 writes with the Admin SDK; a client-writable audit log is not an audit log.
@@ -300,6 +307,11 @@ them until the collection grows, then fail — so they are declared, not discove
 | `background_tasks` | `softwareId ASC`, `type ASC`, `createdAt DESC` | History-scrape progress dialog |
 | `master_registry` | `active ASC`, `lastCheck ASC` | Scheduler picking what is due |
 | `admin_audit` | `createdAt DESC` | Admin console audit list |
+| `background_tasks` | `status ASC`, `updatedAt ASC` | Reaper finding tasks that stopped progressing |
+
+**Index exemptions** (`fieldOverrides`): `master_registry.searchTokens` keeps only `array-contains`; `release_notes.rawData` / `summary`, the `admin_audit` `before` / `after` maps, `background_tasks.details` and every `expiresAt` are not indexed, since nothing queries them.
+
+**`system_state/{doc}`** (backend-only, no client access): `gemini` holds the quota block (ADR-0016); `sweep` holds `lastSweepAt`, `enqueued`, `followed`, written by every sweep and read by `/healthz/pipeline`.
 
 ---
 
