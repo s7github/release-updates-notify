@@ -91,7 +91,7 @@ project has no credentials and is retired. See
 
 ```bash
 PROJECT=your-project
-REGION=europe-west1
+REGION=europe-west4
 
 # 1. Secret
 echo -n "$GEMINI_KEY" | gcloud secrets create gemini-api-key --data-file=- --project=$PROJECT

@@ -11,7 +11,7 @@ import { auth } from "./firebase";
 const configured = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
 const API_BASE = (
   configured ||
-  (import.meta.env.DEV ? "http://localhost:8080" : "https://updatenotify-api-vwdnd6mwaq-ew.a.run.app")
+  (import.meta.env.DEV ? "http://localhost:8080" : "https://updatenotify-api-vwdnd6mwaq-ez.a.run.app")
 ).replace(/\/+$/, "");
 
 export class ApiError extends Error {

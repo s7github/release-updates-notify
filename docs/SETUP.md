@@ -212,7 +212,7 @@ fallback:
 VITE_API_URL=http://localhost:8080
 ```
 
-On Vercel, set `VITE_API_URL=https://updatenotify-api-vwdnd6mwaq-ew.a.run.app` (or the
+On Vercel, set `VITE_API_URL=https://updatenotify-api-vwdnd6mwaq-ez.a.run.app` (or the
 Cloud Run URL) in the project's environment variables. Without it, production
 falls back to the deployed API host, which is correct for the current project
 but wrong for a fork.

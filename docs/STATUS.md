@@ -96,7 +96,13 @@ the browser's Gemini client and open proxy. Details below.
 - `deploy-gcp.ps1`: api min 0, worker caps, 300 s ack deadline with backoff,
   dead-letter IAM + pull subscription, scheduler retries, optional GitHub token,
   PITR, daily backup, TTL policies, uptime check, optional budget.
-- Open: services are in europe-west1, the database in europe-west4 (live migration).
+- Deployed 2026-10-28: services, Pub/Sub, scheduler, Firestore indexes, PITR, a
+  daily backup, TTL policies, an uptime check on `/healthz/pipeline` and an email
+  alert are live. Services moved to `europe-west4` beside the database
+  (ADR-0019); the `europe-west1` copies are deleted. Live sweep verified (200,
+  heartbeat advances, `/healthz/pipeline` 200). GitHub ETag/304 verified against a
+  real repo. Still missing: a `github-token` secret (needs the owner), and Gemini
+  billing (the free tier allows 20 requests/day for the default model).
 
 ### 2.0f Version detection without the model (ADR-0017)
 
@@ -360,8 +366,9 @@ This is the single biggest gap against "data is live and real-time".
   project (`gen-lang-client-0099813375`) using the named database `updatenotify`.
   The database, web app, rules, indexes and the three Cloud Run services
   (`api` public + token-checked, `poller`/`notifier` private, hourly Scheduler
-  sweep) are live in `europe-west1`. The old AI Studio data was **not** migrated:
-  the new database starts empty. API: `https://updatenotify-api-vwdnd6mwaq-ew.a.run.app`.
+  sweep) are live in `europe-west4` (moved from `europe-west1`, ADR-0019). The old
+  AI Studio data was **not** migrated: the new database starts empty. API:
+  `https://updatenotify-api-vwdnd6mwaq-ez.a.run.app`.
   Still unverified: a signed-in admin call, a real poll against Gemini, and the
   Vercel domain being in Firebase Auth's authorised domains.
 - **Is the Vercel-hosted API the intended production host, or is Cloud Run?**

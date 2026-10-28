@@ -13,7 +13,8 @@
 #>
 param(
   [string]$Project = $(Read-Host 'GCP project id'),
-  [string]$Region = 'europe-west1',
+  # Same region as the Firestore database (ADR-0013), so every read and write stays local.
+  [string]$Region = 'europe-west4',
   [string]$FirestoreDatabaseId = 'updatenotify',
   [string]$SweepSchedule = '0 * * * *',
   # Idle capacity costs money; the api is only hit by discover/refresh (clients read
@@ -22,6 +23,8 @@ param(
   # Optional: creates a budget with alerts at 40% and 100% of BudgetUsd.
   [string]$BillingAccount = '',
   [int]$BudgetUsd = 25,
+  # Where the pipeline-stale alert is emailed. Empty skips the alert policy.
+  [string]$AlertEmail = '',
   # Skip every interactive prompt (the optional GitHub token). Add it later with
   # `gcloud secrets create github-token` and re-run.
   [switch]$NoPrompt
@@ -161,7 +164,9 @@ Invoke-Gcloud scheduler jobs $verb http $job --location $Region --project $Proje
 
 Step 'Firestore: recovery and retention'
 Try-Gcloud firestore databases update --database $FirestoreDatabaseId --project $Project --enable-pitr
-Try-Gcloud firestore backups schedules create --database $FirestoreDatabaseId --project $Project --recurrence daily --retention 7d
+if (-not (& gcloud firestore backups schedules list --database $FirestoreDatabaseId --project $Project --format 'value(name)')) {
+  Try-Gcloud firestore backups schedules create --database $FirestoreDatabaseId --project $Project --recurrence daily --retention 7d
+}
 # TTL deletes are free. Documents carry an expiresAt Timestamp (lib/retention.ts).
 foreach ($coll in 'background_tasks', 'system_learnings', 'admin_audit') {
   Try-Gcloud firestore fields ttls update expiresAt --collection-group $coll --enable-ttl --async `
@@ -169,11 +174,48 @@ foreach ($coll in 'background_tasks', 'system_learnings', 'admin_audit') {
 }
 
 Step 'Monitoring: is the pipeline alive?'
-# /healthz/pipeline returns 503 when no sweep has been recorded for 3 hours.
+# /healthz/pipeline returns 503 when no sweep has been recorded for 3 hours. (Plain
+# /healthz is reserved by Cloud Run and answered by Google, so it is not used.)
 $apiHost = ([uri]$urls['api']).Host
-Try-Gcloud monitoring uptime create updatenotify-pipeline --project $Project `
-  --resource-type uptime-url --resource-labels "host=$apiHost,project_id=$Project" `
-  --protocol https --path /healthz/pipeline --period 15 --regions europe --timeout 10
+$checkId = & gcloud monitoring uptime list-configs --project $Project --filter 'displayName=updatenotify-pipeline' --format 'value(name.basename())'
+if (-not $checkId) {
+  # Uptime checks must run from at least three regions.
+  Try-Gcloud monitoring uptime create updatenotify-pipeline --project $Project `
+    --resource-type uptime-url --resource-labels "host=$apiHost,project_id=$Project" `
+    --protocol https --path /healthz/pipeline --period 15 --regions europe,usa-iowa,asia-pacific --timeout 10
+  $checkId = & gcloud monitoring uptime list-configs --project $Project --filter 'displayName=updatenotify-pipeline' --format 'value(name.basename())'
+}
+$hasPolicy = & gcloud monitoring policies list --project $Project --filter 'displayName="UpdateNotify pipeline stale or API down"' --format 'value(name)'
+if ($AlertEmail -and $checkId -and -not $hasPolicy) {
+  $channel = & gcloud beta monitoring channels create --quiet --project $Project --display-name 'UpdateNotify alerts' `
+    --type email --channel-labels "email_address=$AlertEmail" --format 'value(name)'
+  if ($channel) {
+    $policy = @{
+      displayName = 'UpdateNotify pipeline stale or API down'
+      combiner = 'OR'
+      conditions = @(@{
+        displayName = 'Uptime check /healthz/pipeline failing'
+        conditionThreshold = @{
+          filter = "metric.type=`"monitoring.googleapis.com/uptime_check/check_passed`" AND metric.label.check_id=`"$checkId`" AND resource.type=`"uptime_url`""
+          comparison = 'COMPARISON_GT'; thresholdValue = 1; duration = '600s'
+          aggregations = @(@{ alignmentPeriod = '1200s'; perSeriesAligner = 'ALIGN_NEXT_OLDER'
+            crossSeriesReducer = 'REDUCE_COUNT_FALSE'; groupByFields = @('resource.label.*') })
+          trigger = @{ count = 1 }
+        }
+      })
+      notificationChannels = @("$channel".Trim())
+      documentation = @{ mimeType = 'text/markdown'
+        content = 'No sweep has been recorded for 3 hours, or the api is down. Check Cloud Scheduler job updatenotify-sweep and the poller logs.' }
+    }
+    $tmpPolicy = New-TemporaryFile
+    try {
+      $policy | ConvertTo-Json -Depth 10 | Set-Content -Path $tmpPolicy -Encoding utf8
+      Try-Gcloud monitoring policies create --quiet --project $Project --policy-from-file $tmpPolicy
+    } finally { Remove-Item $tmpPolicy -Force }
+  }
+} elseif (-not $AlertEmail) {
+  Write-Warning 'No -AlertEmail given: the uptime check exists but nothing will notify anyone.'
+}
 
 if ($BillingAccount) {
   Step 'Budget'
@@ -182,6 +224,7 @@ if ($BillingAccount) {
     --filter-projects "projects/$Project"
 }
 
+$global:LASTEXITCODE = 0
 Step 'Done'
 Write-Host "api:      $($urls['api'])"
 Write-Host "poller:   $($urls['poller'])"
