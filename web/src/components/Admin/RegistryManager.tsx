@@ -18,7 +18,7 @@ import {
 } from "@mui/material";
 import { DataGrid, GridColDef, GridActionsCellItem } from "@mui/x-data-grid";
 import { RefreshCw, Trash2, Edit2, Zap, ExternalLink, Globe, Github, Rss, Settings, Database, Search, CheckCircle, AlertTriangle } from "lucide-react";
-import { collection, query, onSnapshot, orderBy, limit } from "firebase/firestore";
+import { collection, query, onSnapshot, orderBy, limit, getCountFromServer } from "firebase/firestore";
 import { normaliseSearch, searchCatalog } from "../../services/catalogSearch";
 import { db } from "../../services/firebase";
 import { adminApi, ApiError } from "../../services/api";
@@ -40,6 +40,8 @@ export default function RegistryManager() {
   const [softwareToDelete, setSoftwareToDelete] = useState<any>(null);
   const [newSoftwareBatch, setNewSoftwareBatch] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [liveLimit, setLiveLimit] = useState(100);
+  const [total, setTotal] = useState<number | null>(null);
 
   const rows = found ?? live;
 
@@ -105,7 +107,7 @@ export default function RegistryManager() {
   };
 
   useEffect(() => {
-    const q = query(collection(db, "master_registry"), orderBy("lastCheck", "desc"), limit(100));
+    const q = query(collection(db, "master_registry"), orderBy("lastCheck", "desc"), limit(liveLimit));
     const unsubscribe = onSnapshot(q, (snap) => {
       setLive(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setLoading(false);
@@ -114,6 +116,13 @@ export default function RegistryManager() {
       toast.error("Could not read the catalogue");
     });
     return () => unsubscribe();
+  }, [liveLimit]);
+
+  // One aggregation read, so the header can say how many entries exist in total.
+  useEffect(() => {
+    getCountFromServer(collection(db, "master_registry"))
+      .then((snap) => setTotal(snap.data().count))
+      .catch(() => setTotal(null));
   }, []);
 
   useEffect(() => {
@@ -316,8 +325,15 @@ export default function RegistryManager() {
             sx={{ flex: 1, maxWidth: 400 }}
           />
           <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', lg: 'block' } }}>
-            {found ? <>Found <b>{rows.length}</b> matches.</> : <>Showing the <b>{rows.length}</b> most recently checked. Search to find any catalogue entry.</>}
+            {found
+              ? <>Found <b>{rows.length}</b> matches.</>
+              : <>Showing <b>{rows.length}</b>{total !== null && <> of <b>{total}</b></>} most recently checked. Search to find any entry.</>}
           </Typography>
+          {!found && (total === null || rows.length < total) && (
+            <Button size="small" variant="text" onClick={() => setLiveLimit((n) => n + 500)} sx={{ whiteSpace: 'nowrap' }}>
+              Load 500 more
+            </Button>
+          )}
         </Box>
         <Box sx={{ display: 'flex', gap: 1, width: { xs: '100%', md: 'auto' } }}>
           <Button 

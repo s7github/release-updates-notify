@@ -93,6 +93,8 @@ the browser's Gemini client and open proxy. Details below.
   TTL `expiresAt` fields, index exemptions and a reaper index.
 - Web: the admin registry grid now lists 100 entries live and searches the rest
   (it used to read all ~15k documents per page load); dashboard `in` chunks are 30.
+  The header shows "Showing N of TOTAL" (one count read) and "Load 500 more" widens
+  the live window. Search covers every entry but returns at most ~40 hits per query.
 - `deploy-gcp.ps1`: api min 0, worker caps, 300 s ack deadline with backoff,
   dead-letter IAM + pull subscription, scheduler retries, optional GitHub token,
   PITR, daily backup, TTL policies, uptime check, optional budget.
