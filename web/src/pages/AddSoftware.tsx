@@ -10,6 +10,7 @@ import { useAuth } from "../App";
 import { db } from "../services/firebase";
 import { limitsFor, tierLabel } from "../services/entitlements";
 import { userApi, ApiError } from "../services/api";
+import { searchCatalog } from "../services/catalogSearch";
 import toast from "react-hot-toast";
 import { motion } from "motion/react";
 
@@ -44,27 +45,14 @@ export default function AddSoftware() {
     );
   }, [user]);
 
-  /** Catalog search is local filtering over a bounded registry query. */
+  /** Prefix + whole-word search over the whole catalog (services/catalogSearch.ts). */
   const handleSearch = async (queryVal: string) => {
     if (!queryVal.trim() || !user) return;
     setIsSearching(true);
     setSearchResults([]);
 
     try {
-      const regQ = query(
-        collection(db, "master_registry"), 
-        where("active", "==", true),
-        // Firestore has no full-text search. This is a bounded scan over the
-        // active catalog, filtered in memory; it is honest about its ceiling
-        // until a search index is added.
-        limit(200),
-      );
-      const regSnap = await getDocs(regQ);
-      const needle = queryVal.toLowerCase();
-      const regResults = regSnap.docs
-        .map(d => ({ id: d.id, ...d.data() } as SearchItem))
-        .filter(r => (r.name || "").toLowerCase().includes(needle));
-      setSearchResults(regResults);
+      setSearchResults(await searchCatalog(queryVal));
     } catch (e) {
       console.error("Search error", e);
       toast.error("Could not search the catalogue");

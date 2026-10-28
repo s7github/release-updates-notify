@@ -112,12 +112,15 @@ Document ID is a URL-safe slug (`fl-studio`, `suno`, `macos`).
 | `npm_package` | string? | npm package name; set only when the registry entry declares the same repo as `github_url` (ADR-0014) |
 | `pypi_package` | string? | PyPI project name; same verification rule |
 | `seededFrom` | string[]? | Present on bulk-seeded entries: `homebrew-formula`, `homebrew-cask`, `endoflife` (ADR-0015). `sourcesVerified` stays `false` until a poll succeeds |
+| `searchKey` | string | Lowercased, punctuation-collapsed `name`. Prefix search: `>= q` and `<= q + U+F8FF`. Written by the backend (ADR-0016) |
+| `searchTokens` | string[] | Up to 8 unique lowercase words of `name`, for `array-contains` whole-word search |
 | `suggested_priority` | string[]? | AI-proposed source order |
 | `priority_order` | string? | Admin override, comma-separated. **Wins over `suggested_priority`** |
 | **Poll state** | | |
 | `lastVersion` | string? | Last published version. **The genuine-update gate compares against this** |
 | `lastReleaseDate` | ISO string? | |
 | `lastCheck` | ISO string? | Last poll attempt, successful or not |
+| `lastSourceHash` | string? | SHA-256 of the sources the last successful extraction saw. An equal hash on the next poll skips the model (ADR-0016) |
 | **History scrape settings** | | |
 | `historyMaxCount` | int? | Cap on historical records to ingest |
 | `historyMinDate` | ISO string? | Ignore releases before this |

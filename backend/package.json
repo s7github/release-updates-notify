@@ -14,7 +14,8 @@
     "dev": "tsx watch src/index.ts",
     "lint": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json",
     "test": "node --import tsx --test test/*.test.ts",
-    "seed:catalog": "tsx scripts/seed-catalog.ts"
+    "seed:catalog": "tsx scripts/seed-catalog.ts",
+    "backfill:search": "tsx scripts/backfill-search-keys.ts"
   },
   "dependencies": {
     "@google-cloud/pubsub": "^5.1.0",

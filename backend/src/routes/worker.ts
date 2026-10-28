@@ -39,7 +39,11 @@ export function createPollerApp(): Express {
         const count = await pollHistory(message.softwareId, { taskId: message.taskId });
         res.json({ softwareId: message.softwareId, historyCount: count });
       } else {
-        const result = await pollSoftware(message.softwareId, { taskId: message.taskId });
+        const result = await pollSoftware(message.softwareId, {
+          taskId: message.taskId,
+          scheduled: message.scheduled === true,
+          force: message.force === true,
+        });
         res.json(result);
       }
     } catch (error) {

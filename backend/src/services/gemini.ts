@@ -1,3 +1,4 @@
+import { isQuotaError } from '../lib/geminiGate.js';
 import { GoogleGenAI } from '@google/genai';
 import { config } from '../lib/config.js';
 import { parseToIso } from '../lib/dates.js';
@@ -168,12 +169,9 @@ export async function searchLatestRelease(softwareName: string): Promise<Extract
   return sanitizeRelease(parseJsonResponse<ExtractedRelease>(response.text ?? ''));
 }
 
-/** Bulk extraction for a full version history. */
-export async function extractHistory(
-  softwareName: string,
-  rawData: string,
-): Promise<ExtractedRelease[]> {
-  const prompt = `Analyze this raw data describing the historical releases of "${softwareName}".
+/** The history-extraction prompt. Shared by the Gemini and local (Ollama) paths. */
+export function historyPrompt(softwareName: string, rawData: string): string {
+  return `Analyze this raw data describing the historical releases of "${softwareName}".
 
   Task: Extract a COMPREHENSIVE list of ALL identifiable release updates found in this text.
 
@@ -196,6 +194,14 @@ export async function extractHistory(
     "category": "string",
     "summary": "string (brief markdown summary focusing on key changes)"
   }]`;
+}
+
+/** Bulk extraction for a full version history. */
+export async function extractHistory(
+  softwareName: string,
+  rawData: string,
+): Promise<ExtractedRelease[]> {
+  const prompt = historyPrompt(softwareName, rawData);
 
   const response = await ai().models.generateContent({
     model: config.model,
@@ -263,6 +269,15 @@ export interface ExtractionResult {
   sourceUrls?: string[];
 }
 
+/**
+ * What a scheduled (hourly sweep) poll may do: one extraction, one retry, no
+ * history re-extraction and no paid web search. Search-grounded calls are billed
+ * per query, so they are reserved for polls a person or admin asked for.
+ */
+export const SCHEDULED_STRATEGIES: ExtractionStrategy[] = [
+  { name: 'gemini_direct', weight: 1.0, timeoutMs: 30000, retryCount: 1 },
+];
+
 export async function extractWithFallback(
   softwareName: string,
   rawData: string,
@@ -270,7 +285,6 @@ export async function extractWithFallback(
 ): Promise<ExtractionResult> {
   const defaultStrategies: ExtractionStrategy[] = [
     { name: 'gemini_direct', weight: 1.0, timeoutMs: 30000, retryCount: 2 },
-    { name: 'gemini_search_grounded', weight: 0.9, timeoutMs: 30000, retryCount: 1 },
     { name: 'gemini_history', weight: 0.8, timeoutMs: 60000, retryCount: 2 },
     { name: 'gemini_web_search', weight: 0.7, timeoutMs: 30000, retryCount: 1 },
   ];
@@ -333,6 +347,8 @@ export async function extractWithFallback(
 
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
+        // A quota error will repeat for every remaining strategy and retry.
+        if (isQuotaError(lastError)) throw lastError;
         categorizeExtractionError(strategy, lastError, softwareName);
         await captureMessage('extraction_strategy_failed', 'warning', {
           softwareName,

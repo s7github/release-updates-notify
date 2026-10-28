@@ -10,7 +10,9 @@ import {
 import { Collections, db } from '../lib/firebase.js';
 import { log } from '../lib/logging.js';
 import { captureException } from '../lib/sentry.js';
+import { searchFields } from '../lib/searchKey.js';
 import { discoverAll } from '../services/discovery.js';
+import { followedSoftwareIds } from '../services/poller.js';
 import { enqueuePoll } from '../services/pollRequests.js';
 
 /**
@@ -245,6 +247,7 @@ export function createAdminRouter(): Router {
     const now = new Date().toISOString();
     await ref.set({
       name,
+      ...searchFields(name),
       slug: softwareId,
       type: body.type === 'topic' ? 'topic' : 'software',
       vendor: null,
@@ -326,7 +329,12 @@ export function createAdminRouter(): Router {
     }
 
     await ref.set(
-      { ...parsed.value, lastMetadataUpdate: new Date().toISOString() },
+      {
+        ...parsed.value,
+        // Keep search in step with a rename.
+        ...(typeof parsed.value.name === 'string' ? searchFields(parsed.value.name) : {}),
+        lastMetadataUpdate: new Date().toISOString(),
+      },
       { merge: true },
     );
     await audit(req, 'registry.update', 'software', softwareId, snapshot(before.data()), parsed.value);
@@ -406,6 +414,7 @@ export function createAdminRouter(): Router {
       includeHistory?: unknown;
       historyMaxCount?: unknown;
       historyMinDate?: unknown;
+      force?: unknown;
     };
 
     const ref = db().collection(Collections.MASTER_REGISTRY).doc(softwareId);
@@ -433,6 +442,8 @@ export function createAdminRouter(): Router {
       softwareName: String(software.get('name') ?? softwareId),
       requestedBy: adminId(req),
       includeHistory,
+      // Re-extract even if the sources look unchanged (e.g. after fixing a source).
+      force: body.force === true,
       taskType: includeHistory ? 'history_scrape' : 'initial_poll',
     });
     await audit(req, 'registry.poll', 'software', softwareId, null, { includeHistory, taskId });
@@ -441,11 +452,18 @@ export function createAdminRouter(): Router {
 
   /** Enqueue every active catalog entry. Used by the console's "Scan all". */
   router.post('/poll-all', async (req, res) => {
-    const snap = await db()
-      .collection(Collections.MASTER_REGISTRY)
-      .where('active', '==', true)
-      .limit(500)
-      .get();
+    // Followed entries only, as scheduled polls (no paid web search). This is a
+    // bulk action and the unfollowed catalog is ~15k seeded entries.
+    const followed = [...(await followedSoftwareIds())].slice(0, 500);
+    const followedDocs =
+      followed.length > 0
+        ? await db().getAll(
+            ...followed.map((id) => db().collection(Collections.MASTER_REGISTRY).doc(id)),
+          )
+        : [];
+    const snap = {
+      docs: followedDocs.filter((d) => d.exists && d.get('active') === true),
+    };
 
     let enqueued = 0;
     const failures: string[] = [];
@@ -455,6 +473,7 @@ export function createAdminRouter(): Router {
           softwareId: doc.id,
           softwareName: String(doc.get('name') ?? doc.id),
           requestedBy: adminId(req),
+          scheduled: true,
           taskType: 'initial_poll',
         });
         enqueued += 1;

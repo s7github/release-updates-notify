@@ -53,4 +53,5 @@ export const Collections = {
   SYSTEM_LEARNINGS: 'system_learnings',
   ADMINS: 'admins',
   ADMIN_AUDIT: 'admin_audit',
+  SYSTEM_STATE: 'system_state',
 } as const;

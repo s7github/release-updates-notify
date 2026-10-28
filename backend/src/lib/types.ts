@@ -55,6 +55,8 @@ export interface Software {
   lastVersion?: string | null;
   lastReleaseDate?: string | null;
   lastCheck?: string | null;
+  /** Fingerprint of the sources the last successful extraction saw. */
+  lastSourceHash?: string | null;
   historyMaxCount?: number | null;
   historyMinDate?: string | null;
 }
@@ -97,6 +99,10 @@ export interface PollRequestMessage {
   taskId?: string;
   includeHistory?: boolean;
   requestedBy?: string;
+  /** Sent by the hourly sweep. Scheduled polls never use paid web search. */
+  scheduled?: boolean;
+  /** Re-extract even if the sources are unchanged since the last success. */
+  force?: boolean;
 }
 
 /** Published to `release-published` — only for genuine updates (ADR-0008). */

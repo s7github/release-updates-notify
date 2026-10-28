@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { slugify } from '../lib/adminValidation.js';
+import { searchFields } from '../lib/searchKey.js';
 
 /**
  * Bulk catalog seeding from public software catalogs.
@@ -11,7 +12,7 @@ import { slugify } from '../lib/adminValidation.js';
  * Gemini to guess. The mappers are pure so they can be tested offline.
  */
 
-export type SeedOrigin = 'homebrew-formula' | 'homebrew-cask' | 'endoflife';
+export type SeedOrigin = 'homebrew-formula' | 'homebrew-cask' | 'endoflife' | 'curated-music';
 
 export interface SeedEntry {
   id: string;
@@ -156,6 +157,7 @@ export function toRegistryDoc(entry: SeedEntry, nowIso: string): Record<string, 
   if (entry.changelog_url || entry.website) priority.push('html');
   return {
     name: entry.name,
+    ...searchFields(entry.name),
     slug: entry.id,
     type: 'software',
     vendor: null,

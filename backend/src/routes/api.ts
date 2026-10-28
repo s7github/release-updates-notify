@@ -5,6 +5,8 @@ import { Collections, db } from '../lib/firebase.js';
 import { log } from '../lib/logging.js';
 import { captureException } from '../lib/sentry.js';
 import { consumeQuota } from '../lib/rateLimit.js';
+import { geminiBlockedUntil, isQuotaError, recordGeminiBlock } from '../lib/geminiGate.js';
+import { searchFields } from '../lib/searchKey.js';
 import { discoverAll } from '../services/discovery.js';
 import { enqueuePoll } from '../services/pollRequests.js';
 import { createAdminRouter } from './admin.js';
@@ -93,6 +95,19 @@ export function createApiApp(): Express {
     const tier = await tierFor(uid);
     const entitlements = limitsFor(tier);
 
+    // While the AI quota is spent, a lookup cannot succeed. Say so before
+    // charging the user's hourly allowance for it.
+    const pausedUntil = await geminiBlockedUntil();
+    if (pausedUntil) {
+      res.status(503)
+        .set('Retry-After', String(Math.ceil((pausedUntil.getTime() - Date.now()) / 1000)))
+        .json({
+          error: 'AI lookups are paused until the daily limit resets. Try again later.',
+          retryAt: pausedUntil.toISOString(),
+        });
+      return;
+    }
+
     // Checked before spending anything. This call costs real money.
     const quota = await consumeQuota(uid, 'discover', entitlements.discoveryPerHour);
     if (!quota.allowed) {
@@ -117,6 +132,7 @@ export function createApiApp(): Express {
 
       await db().collection(Collections.MASTER_REGISTRY).doc(softwareId).set({
         name: discovered.name || query,
+        ...searchFields(discovered.name || query),
         slug: softwareId,
         type: discovered.type === 'topic' ? 'topic' : 'software',
         vendor: discovered.vendor ?? null,
@@ -146,6 +162,16 @@ export function createApiApp(): Express {
       log.info('discovered software', { softwareId, uid, tier });
       res.json({ softwareId, taskId, alreadyExisted: false });
     } catch (error) {
+      if (isQuotaError(error)) {
+        const until = await recordGeminiBlock(error);
+        res.status(503)
+          .set('Retry-After', String(Math.ceil((until.getTime() - Date.now()) / 1000)))
+          .json({
+            error: 'AI lookups are paused until the daily limit resets. Try again later.',
+            retryAt: until.toISOString(),
+          });
+        return;
+      }
       log.error('discovery failed', error, { uid, query });
       res.status(502).json({ error: 'Could not find sources for that right now' });
     }

@@ -21,6 +21,8 @@ export async function enqueuePoll(input: {
   softwareName: string;
   requestedBy?: string;
   includeHistory?: boolean;
+  force?: boolean;
+  scheduled?: boolean;
   taskType?: 'initial_poll' | 'history_scrape';
 }): Promise<string> {
   const taskId = await createTask({
@@ -34,6 +36,8 @@ export async function enqueuePoll(input: {
     softwareId: input.softwareId,
     taskId,
     includeHistory: input.includeHistory === true,
+    force: input.force === true,
+    scheduled: input.scheduled === true,
     requestedBy: input.requestedBy,
   };
 

@@ -8,11 +8,21 @@ import { isReleaseCategory } from '../lib/types.js';
 import type {
   ExtractedRelease,
   MetadataLearnings,
+  PollRequestMessage,
   ReleasePublishedMessage,
   Software,
   SourceType,
 } from '../lib/types.js';
-import { extractHistory, extractRelease, searchLatestRelease, extractWithFallback } from './gemini.js';
+import {
+  extractHistory,
+  extractRelease,
+  searchLatestRelease,
+  extractWithFallback,
+  SCHEDULED_STRATEGIES,
+} from './gemini.js';
+import { geminiBlockedUntil, isQuotaError, recordGeminiBlock } from '../lib/geminiGate.js';
+import { selectDue, type RegistryProbe } from '../lib/schedule.js';
+import { hashSources } from '../lib/sourceHash.js';
 import { gatherSources, effectivePriority } from './scraper.js';
 import { progressReporter, updateTask } from './tasks.js';
 import { IntelligentCache } from '../lib/cache.js';
@@ -328,6 +338,24 @@ export async function getSoftware(softwareId: string): Promise<Software | null> 
   return { id: snap.id, ...(snap.data() as Omit<Software, 'id'>) };
 }
 
+/**
+ * The AI quota is exhausted. Acknowledge the job (return, don't throw) so
+ * Pub/Sub does not redeliver it five times into the same wall, and say when it
+ * can work again. `lastCheck` is untouched so the entry stays due.
+ */
+async function deferForQuota(
+  softwareId: string,
+  taskId: string | undefined,
+  until: Date,
+): Promise<PollResult> {
+  await updateTask(taskId, {
+    status: 'failed',
+    error: 'AI quota exhausted',
+    message: `AI lookups are paused until ${until.toISOString()}. Try again after that.`,
+  });
+  return { softwareId, version: null, isNewVersion: false, notified: false };
+}
+
 export interface PollResult {
   softwareId: string;
   version: string | null;
@@ -337,9 +365,9 @@ export interface PollResult {
 
 export async function pollSoftware(
   softwareId: string,
-  options: { taskId?: string } = {},
+  options: { taskId?: string; scheduled?: boolean; force?: boolean } = {},
 ): Promise<PollResult> {
-  const { taskId } = options;
+  const { taskId, scheduled = false, force = false } = options;
   const report = progressReporter(taskId);
 
   const software = await getSoftware(softwareId);
@@ -373,6 +401,28 @@ export async function pollSoftware(
 
     const rawData = chunks.map((c) => c.text).join('\n\n---\n\n');
 
+    // Gate 1: nothing the model has not already seen. Most polls end here, and
+    // it costs no model call at all.
+    const sourceHash = hashSources(chunks);
+    if (!force && chunks.length > 0 && software.lastSourceHash === sourceHash) {
+      await touchLastCheck(softwareId);
+      await updateTask(taskId, {
+        status: 'completed',
+        progress: 100,
+        message: `Already up to date at ${software.lastVersion ?? 'the latest version'} (sources unchanged)`,
+      });
+      return {
+        softwareId,
+        version: software.lastVersion ?? null,
+        isNewVersion: false,
+        notified: false,
+      };
+    }
+
+    // Gate 2: the AI quota is spent. Stop here rather than retry into a wall.
+    const blockedUntil = await geminiBlockedUntil();
+    if (blockedUntil) return deferForQuota(softwareId, taskId, blockedUntil);
+
     // Use enhanced multi-strategy extraction with fallback
     let extractionResult: ExtractedRelease | null = null;
     let extractionResultQuality: ExtractionValidationResult | null = null;
@@ -384,7 +434,11 @@ export async function pollSoftware(
       await report(60, 'Extracting with multi-strategy fallback…');
       try {
         // Use the enhanced extraction with fallback strategies
-        const enhancedResult = await extractWithFallback(software.name, rawData);
+        const enhancedResult = await extractWithFallback(
+          software.name,
+          rawData,
+          scheduled ? SCHEDULED_STRATEGIES : undefined,
+        );
         extractionResult = enhancedResult.release;
         extractionStrategy = enhancedResult.strategy;
         extractionConfidence = enhancedResult.confidence;
@@ -433,6 +487,9 @@ export async function pollSoftware(
         }
 
       } catch (error) {
+        if (isQuotaError(error)) {
+          return deferForQuota(softwareId, taskId, await recordGeminiBlock(error));
+        }
         // All extraction strategies failed
         const errorMessage = error instanceof Error ? error.message : String(error);
         
@@ -469,6 +526,19 @@ export async function pollSoftware(
     }
 
     // Fall back to web search if multi-strategy extraction failed or no version found
+    if (scheduled && (!extractionResult?.version || !extractionResult.isGenuineUpdate)) {
+      // Search-grounded calls are billed per query. A person or admin can ask
+      // for one; the hourly sweep may not. Marking it checked also backs the
+      // entry off for the sweep's age window instead of retrying every hour.
+      await touchLastCheck(softwareId);
+      await updateTask(taskId, {
+        status: 'completed',
+        progress: 100,
+        message: 'Inconclusive; web search is skipped for scheduled polls',
+      });
+      return { softwareId, version: null, isNewVersion: false, notified: false };
+    }
+
     if (!extractionResult?.version || !extractionResult.isGenuineUpdate) {
       await report(70, 'Enhanced extraction inconclusive; falling back to web search…');
       try {
@@ -494,6 +564,9 @@ export async function pollSoftware(
         });
         
       } catch (error) {
+        if (isQuotaError(error)) {
+          return deferForQuota(softwareId, taskId, await recordGeminiBlock(error));
+        }
         await report(85, `Web search fallback also failed: ${(error as Error).message}`);
         captureMessage('extraction_fallback_failed', 'error', {
           softwareId,
@@ -541,6 +614,8 @@ export async function pollSoftware(
         lastVersion: finalExtracted.version,
         lastReleaseDate: finalExtracted.releaseDate ?? new Date().toISOString(),
         lastCheck: new Date().toISOString(),
+        // Only a real extraction from fetched sources earns a skip next time.
+        lastSourceHash: chunks.length > 0 ? sourceHash : null,
       },
       { merge: true },
     );
@@ -590,6 +665,9 @@ export async function pollSoftware(
 
     return { softwareId, version: finalExtracted.version, isNewVersion, notified };
   } catch (error) {
+    if (isQuotaError(error)) {
+      return deferForQuota(softwareId, taskId, await recordGeminiBlock(error));
+    }
     captureException(error as Error, {
       softwareId,
       taskId,
@@ -618,6 +696,16 @@ export async function pollHistory(
   const software = await getSoftware(softwareId);
   if (!software) throw new Error(`Unknown software ${softwareId}`);
 
+  const historyBlocked = await geminiBlockedUntil();
+  if (historyBlocked) {
+    await updateTask(taskId, {
+      status: 'failed',
+      error: 'AI quota exhausted',
+      message: `AI lookups are paused until ${historyBlocked.toISOString()}. Try again after that.`,
+    });
+    return 0;
+  }
+
   await report(15, 'Gathering historical sources…');
   const chunks = await gatherSources(software, { history: true });
   if (chunks.length === 0) {
@@ -626,7 +714,19 @@ export async function pollHistory(
   }
 
   await report(50, 'Bulk extracting history…');
-  let history = await extractHistory(software.name, chunks.map((c) => c.text).join('\n\n---\n\n'));
+  let history: Awaited<ReturnType<typeof extractHistory>>;
+  try {
+    history = await extractHistory(software.name, chunks.map((c) => c.text).join('\n\n---\n\n'));
+  } catch (error) {
+    if (!isQuotaError(error)) throw error;
+    const until = await recordGeminiBlock(error);
+    await updateTask(taskId, {
+      status: 'failed',
+      error: 'AI quota exhausted',
+      message: `AI lookups are paused until ${until.toISOString()}. Try again after that.`,
+    });
+    return 0;
+  }
 
   if (software.historyMinDate) {
     const min = new Date(software.historyMinDate).getTime();
@@ -797,23 +897,62 @@ async function publishRelease(message: ReleasePublishedMessage, retryCount = 3, 
  * become 5,000 concurrent scrapes (ADR-0004).
  */
 export async function enqueueDuePolls(olderThanMinutes: number): Promise<number> {
+  // While the AI quota is spent every poll would be deferred anyway.
+  const blocked = await geminiBlockedUntil();
+  if (blocked) {
+    log.warn('sweep skipped: AI quota paused', { until: blocked.toISOString() });
+    return 0;
+  }
+
   const cutoff = new Date(Date.now() - olderThanMinutes * 60_000).toISOString();
 
-  const snapshot = await db()
-    .collection(Collections.MASTER_REGISTRY)
-    .where('active', '==', true)
-    .where('lastCheck', '<', cutoff)
-    .orderBy('lastCheck', 'asc')
-    .limit(500)
-    .get();
+  // Only products somebody follows are polled. The catalog is ~15k seeded
+  // entries; polling ones nobody is waiting for spends model calls for nothing.
+  const followed = await followedSoftwareIds();
+  if (followed.size === 0) return 0;
 
+  const refs = [...followed].map((id) => db().collection(Collections.MASTER_REGISTRY).doc(id));
+  const probes: RegistryProbe[] = [];
+  for (let i = 0; i < refs.length; i += 300) {
+    const docs = await db().getAll(...refs.slice(i, i + 300), {
+      fieldMask: ['active', 'lastCheck'],
+    });
+    for (const doc of docs) {
+      if (!doc.exists) continue;
+      probes.push({
+        id: doc.id,
+        active: (doc.get('active') as boolean | undefined) ?? null,
+        lastCheck: (doc.get('lastCheck') as string | undefined) ?? null,
+      });
+    }
+  }
+
+  const due = selectDue(probes, followed, cutoff, 500);
   const topic = client().topic(config.topics.pollRequests);
   await Promise.all(
-    snapshot.docs.map((doc) => topic.publishMessage({ json: { softwareId: doc.id } })),
+    due.map((softwareId) =>
+      topic.publishMessage({ json: { softwareId, scheduled: true } satisfies PollRequestMessage }),
+    ),
   );
 
-  log.info('enqueued due polls', { count: snapshot.size, cutoff });
-  return snapshot.size;
+  log.info('enqueued due polls', { count: due.length, followed: followed.size, cutoff });
+  return due.length;
+}
+
+/**
+ * Distinct software ids anyone follows. One read per interest document per sweep:
+ * trivial next to the free daily read allowance at current scale, and the thing
+ * to replace with a maintained follower count if interests reach the hundreds of
+ * thousands.
+ */
+export async function followedSoftwareIds(): Promise<Set<string>> {
+  const snap = await db().collection(Collections.INTERESTS).select('softwareId').get();
+  const ids = new Set<string>();
+  for (const doc of snap.docs) {
+    const id = doc.get('softwareId');
+    if (typeof id === 'string' && id) ids.add(id);
+  }
+  return ids;
 }
 
 /** Process cached results */

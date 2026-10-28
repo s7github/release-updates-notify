@@ -59,6 +59,24 @@ the browser's Gemini client and open proxy. Details below.
   followed seeded product has no release until polled. Open: trigger a first
   poll on follow.
 
+### 2.0e Cost gates and catalog search (ADR-0016)
+
+- **Search fixed.** Seeding 15k entries broke the web search (it scanned only the
+  first 200 ids). Entries now carry `searchKey` / `searchTokens` (backfilled for all
+  15,102), and `web/src/services/catalogSearch.ts` does a prefix query plus a
+  whole-word query. Android already searched by name prefix.
+- **Polls are gated.** `lastSourceHash` skips the model when sources are unchanged;
+  the sweep and "Scan all" poll only followed products; scheduled polls make one
+  extraction and never use paid web search; the duplicate extraction strategy is
+  gone; a quota 429 trips `system_state/gemini` and polls, sweeps and
+  `/v1/discover` pause instead of retrying.
+- Verified: lint, 102 tests, and a live scheduled poll of an unchanged product that
+  finished in 236 ms with no model call. **Not deployed:** the cloud services still
+  run the previous image, so none of the gates apply in production until a redeploy.
+- Not done (live infra, needs approval): `api` `minScale` 1 to 0, poller
+  `max-instances`/`concurrency`, Pub/Sub retry backoff, budget alerts. Commands are
+  in the session summary.
+
 ### 2.1 Subscription entitlements are now enforced
 
 - Added `backend/src/lib/entitlements.ts` (authoritative) and
