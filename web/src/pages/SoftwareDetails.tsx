@@ -200,10 +200,14 @@ export default function SoftwareDetails() {
     setIsSyncing(true);
     const toastId = toast.loading(`Full Sync for ${software.name}...`);
     try {
-      await adminApi.discoverRegistry(id);
+      const discovered = await adminApi.discoverRegistry(id);
       await adminApi.pollRegistry(id);
       await fetchSoftware();
-      toast.success(`${software.name} sources refreshed and a poll queued`, { id: toastId });
+      if (discovered.warning) {
+        toast(`${software.name}: poll queued. ${discovered.warning}`, { id: toastId, icon: "⚠️", duration: 7000 });
+      } else {
+        toast.success(`${software.name} sources refreshed and a poll queued`, { id: toastId });
+      }
     } catch (error: any) {
       toast.error(error instanceof ApiError ? error.message : "Sync failed", { id: toastId });
     } finally {
@@ -236,9 +240,13 @@ export default function SoftwareDetails() {
     setIsAIVerifying(true);
     const tid = toast.loading(`AI Agent is analyzing sources for ${software.name}...`);
     try {
-      await adminApi.discoverRegistry(id);
+      const discovered = await adminApi.discoverRegistry(id);
       await fetchSoftware();
-      toast.success(`Sources verified and updated for ${software.name}`, { id: tid });
+      if (discovered.warning) {
+        toast(`${software.name}: ${discovered.warning}`, { id: tid, icon: "⚠️", duration: 7000 });
+      } else {
+        toast.success(`Sources verified and updated for ${software.name}`, { id: tid });
+      }
     } catch (e: any) {
       toast.error(e instanceof ApiError ? e.message : "AI verification failed", { id: tid });
     } finally {

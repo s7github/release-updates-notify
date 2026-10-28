@@ -18,14 +18,19 @@ import {
 } from "@mui/material";
 import { DataGrid, GridColDef, GridActionsCellItem } from "@mui/x-data-grid";
 import { RefreshCw, Trash2, Edit2, Zap, ExternalLink, Globe, Github, Rss, Settings, Database, Search, CheckCircle, AlertTriangle } from "lucide-react";
-import { collection, query, onSnapshot } from "firebase/firestore";
+import { collection, query, onSnapshot, orderBy, limit } from "firebase/firestore";
+import { normaliseSearch, searchCatalog } from "../../services/catalogSearch";
 import { db } from "../../services/firebase";
 import { adminApi, ApiError } from "../../services/api";
 import toast from "react-hot-toast";
 
 export default function RegistryManager() {
   const navigate = useNavigate();
-  const [rows, setRows] = useState<any[]>([]);
+  // `live` is the most recently checked slice, kept current; `found` is a search
+  // over the whole catalogue. Listening to all ~15k entries cost 15k reads per page load.
+  const [live, setLive] = useState<any[]>([]);
+  const [found, setFound] = useState<any[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pollingId, setPollingId] = useState<string | null>(null);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
@@ -36,19 +41,19 @@ export default function RegistryManager() {
   const [newSoftwareBatch, setNewSoftwareBatch] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
 
-  const filteredRows = rows.filter(row => 
-    row.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    row.vendor.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    row.id.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const rows = found ?? live;
 
   const handleFullSync = async (software: any) => {
     setRefreshingId(software.id);
     const toastId = toast.loading(`Full Sync for ${software.name}...`);
     try {
-      await adminApi.discoverRegistry(software.id);
+      const discovered = await adminApi.discoverRegistry(software.id);
       await adminApi.pollRegistry(software.id);
-      toast.success(`${software.name} sources refreshed and a poll queued`, { id: toastId });
+      if (discovered.warning) {
+        toast(`${software.name}: poll queued. ${discovered.warning}`, { id: toastId, icon: "⚠️", duration: 7000 });
+      } else {
+        toast.success(`${software.name} sources refreshed and a poll queued`, { id: toastId });
+      }
     } catch (error: any) {
       toast.error(error instanceof ApiError ? error.message : "Sync failed", { id: toastId });
     } finally {
@@ -93,15 +98,16 @@ export default function RegistryManager() {
       }
       setAddOpen(false);
       setNewSoftwareBatch("");
+      if (names[0]) setSearchTerm(names[0]);
     } catch (e) {
       toast.error("Failed to add software", { id: toastId });
     }
   };
 
   useEffect(() => {
-    const q = query(collection(db, "master_registry"));
+    const q = query(collection(db, "master_registry"), orderBy("lastCheck", "desc"), limit(100));
     const unsubscribe = onSnapshot(q, (snap) => {
-      setRows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLive(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setLoading(false);
     }, () => {
       setLoading(false);
@@ -109,6 +115,31 @@ export default function RegistryManager() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const text = searchTerm.trim();
+    if (normaliseSearch(text).length < 2) {
+      setFound(null);
+      setSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const hits = await searchCatalog(text, { includeInactive: true });
+        if (!cancelled) setFound(hits);
+      } catch {
+        if (!cancelled) toast.error("Search failed");
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchTerm]);
 
   const handlePoll = async (software: any) => {
     setPollingId(software.id);
@@ -127,6 +158,7 @@ export default function RegistryManager() {
     const toastId = toast.loading(`Purging ${name}...`);
     try {
       const result = await adminApi.deleteRegistry(id, name);
+      setFound((current) => current && current.filter((row) => row.id !== id));
       toast.success(`"${name}" and all associated data purged (${result.deletedReleases} releases).`, { id: toastId });
     } catch (e: any) {
       toast.error(e instanceof ApiError ? e.message : "Failed to delete", { id: toastId });
@@ -171,7 +203,7 @@ export default function RegistryManager() {
             src={params.row.icon_url} 
             sx={{ width: 32, height: 32, bgcolor: 'rgba(255,255,255,0.05)' }}
           >
-            {params.row.name[0]}
+            {String(params.row.name ?? "?")[0]}
           </Avatar>
           <Box sx={{ display: 'flex', flexDirection: 'column' }}>
             <Typography variant="body2" sx={{ fontWeight: 700 }}>{params.row.name}</Typography>
@@ -284,7 +316,7 @@ export default function RegistryManager() {
             sx={{ flex: 1, maxWidth: 400 }}
           />
           <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', lg: 'block' } }}>
-            Showing <b>{filteredRows.length}</b> of <b>{rows.length}</b> items in software catalogue.
+            {found ? <>Found <b>{rows.length}</b> matches.</> : <>Showing the <b>{rows.length}</b> most recently checked. Search to find any catalogue entry.</>}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, width: { xs: '100%', md: 'auto' } }}>
@@ -311,9 +343,9 @@ export default function RegistryManager() {
         </Box>
       </Box>
       <DataGrid
-        rows={filteredRows}
+        rows={rows}
         columns={columns}
-        loading={loading}
+        loading={loading || searching}
         disableRowSelectionOnClick
         rowHeight={60}
         sx={{

@@ -41,7 +41,10 @@ function toHit(d: QueryDocumentSnapshot<DocumentData>): CatalogHit {
   return { id: d.id, ...d.data() } as CatalogHit;
 }
 
-export async function searchCatalog(raw: string): Promise<CatalogHit[]> {
+export async function searchCatalog(
+  raw: string,
+  { includeInactive = false }: { includeInactive?: boolean } = {},
+): Promise<CatalogHit[]> {
   const needle = normaliseSearch(raw);
   if (needle.length < 2) return [];
   const words = needle.split(" ").filter((w) => w.length >= 2);
@@ -67,7 +70,7 @@ export async function searchCatalog(raw: string): Promise<CatalogHit[]> {
   for (const snap of await Promise.all(queries)) {
     for (const d of snap.docs) {
       const hit = toHit(d);
-      if (hit.active === false) continue; // admin-disabled entries stay hidden
+      if (hit.active === false && !includeInactive) continue; // admin-disabled entries stay hidden from users
       // Multi-word input must match every word, wherever it appears in the name.
       const key = hit.searchKey ?? normaliseSearch(hit.name ?? "");
       if (!words.every((w) => key.includes(w))) continue;

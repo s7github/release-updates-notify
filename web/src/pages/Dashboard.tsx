@@ -108,7 +108,7 @@ export default function Dashboard() {
 
     setLoading(true);
     const chunks: string[][] = [];
-    for (let i = 0; i < softwareIds.length; i += 10) chunks.push(softwareIds.slice(i, i + 10));
+    for (let i = 0; i < softwareIds.length; i += 30) chunks.push(softwareIds.slice(i, i + 30));
 
     const perChunk = new Map<number, any[]>();
     const cachedChunks = new Set<number>();

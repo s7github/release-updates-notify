@@ -6,8 +6,14 @@
       "collectionGroup": "interests",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
@@ -15,8 +21,14 @@
       "collectionGroup": "release_notes",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "softwareId", "order": "ASCENDING" },
-        { "fieldPath": "releaseDate", "order": "DESCENDING" }
+        {
+          "fieldPath": "softwareId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "releaseDate",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
@@ -24,8 +36,14 @@
       "collectionGroup": "release_notes",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "softwareId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "ASCENDING" }
+        {
+          "fieldPath": "softwareId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
@@ -33,8 +51,14 @@
       "collectionGroup": "background_tasks",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "requestedBy", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "requestedBy",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
@@ -42,8 +66,14 @@
       "collectionGroup": "master_registry",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "active", "order": "ASCENDING" },
-        { "fieldPath": "lastCheck", "order": "ASCENDING" }
+        {
+          "fieldPath": "active",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastCheck",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
@@ -51,11 +81,91 @@
       "collectionGroup": "background_tasks",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "softwareId", "order": "ASCENDING" },
-        { "fieldPath": "type", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "softwareId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "Reaper: tasks that stopped making progress (status in pending/processing, oldest update first).",
+      "collectionGroup": "background_tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "//": "searchTokens is only ever queried with array-contains; skip the other index modes.",
+      "collectionGroup": "master_registry",
+      "fieldPath": "searchTokens",
+      "indexes": [
+        {
+          "queryScope": "COLLECTION",
+          "arrayConfig": "CONTAINS"
+        }
+      ]
+    },
+    {
+      "//": "Never queried; a long indexed string costs write and storage for nothing.",
+      "collectionGroup": "release_notes",
+      "fieldPath": "rawData",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "release_notes",
+      "fieldPath": "summary",
+      "indexes": []
+    },
+    {
+      "//": "Audit before/after snapshots are maps; never queried.",
+      "collectionGroup": "admin_audit",
+      "fieldPath": "before",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "admin_audit",
+      "fieldPath": "after",
+      "indexes": []
+    },
+    {
+      "//": "Progress details are a map; never queried.",
+      "collectionGroup": "background_tasks",
+      "fieldPath": "details",
+      "indexes": []
+    },
+    {
+      "//": "TTL fields. Deletion by TTL needs the policy, not an index.",
+      "collectionGroup": "background_tasks",
+      "fieldPath": "expiresAt",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "system_learnings",
+      "fieldPath": "expiresAt",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "admin_audit",
+      "fieldPath": "expiresAt",
+      "indexes": []
+    }
+  ]
 }
