@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated:** 2026-10-28
-**Updated by:** the subscription/admin/real-time pass
+**Last updated:** 2026-10-29
+**Updated by:** the privacy policy rewrite for Google OAuth branding verification
 
 > **If you are an agent or a person picking this up cold, this is the file that
 > tells you where things actually stand.** Read it before planning anything, and
@@ -10,6 +10,15 @@
 >
 > Keep the honesty. "Scaffolded but never run against a real project" is a useful
 > sentence; "done" would not be.
+
+> **2026-10-29 - privacy policy.** `web/src/pages/public/Privacy.tsx` now covers what
+> Google's branding review looks for: data collected, the basic sign-in scopes only
+> (openid, email, profile), purposes, the Limited Use statement, processors, retention,
+> deletion and a contact (support@releasescope.com, which must receive mail). The page
+> stays at `/privacy`; the OAuth consent screen's privacy-policy URL must be
+> `https://releasescope.com/privacy` (it was set to `/policy`, which does not exist).
+> The policy is not yet deployed. It needs the owner's review, and it must change if
+> scopes, analytics or billing change.
 
 ---
 
