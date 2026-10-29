@@ -56,7 +56,11 @@ Namecheap). Three approved plans, built in order on separate branches:
    on this machine until the pnpm store location is fixed.
 2. `docs/superpowers/plans/2026-10-28-batch2-signin-brand-and-autocomplete.md` —
    **Code built on branch `feat/web-signin-search-public-site`, uncommitted** (batches 2 and 3
-   share this one branch). Done: `authDomain` -> `releasescope.com` with the `/__/auth/*`
+   share this one branch). **2026-10-29 fix:** sign-in showed "cancelled" because the apex
+   308-redirects to `www`, breaking the popup handshake; `authDomain` is now
+   `www.releasescope.com` (owner must add `https://www.releasescope.com/__/auth/handler` to the
+   Google OAuth redirect URIs and `www.releasescope.com` to Firebase Authorized domains, then
+   deploy and test one real sign-in; not yet verified). Done: `authDomain` -> `releasescope.com` with the `/__/auth/*`
    proxy in `web/vercel.json` (`VITE_AUTH_DOMAIN` overrides it locally); matcher
    `services/suggest.ts` (typo tolerance, 11 tests); `GET /v1/catalog-index.json` on `api`
    (`lib/catalogIndex.ts`, 4 tests, in-memory 6 h cache); `SoftwareSearch` combobox in
