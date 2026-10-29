@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib';
 import express, { type Express } from 'express';
 import { requireAuth } from '../lib/auth.js';
 import { effectiveTier, limitsFor } from '../lib/entitlements.js';
@@ -30,7 +31,7 @@ function slugify(value: string): string {
 }
 
 const INDEX_TTL_MS = 6 * 60 * 60 * 1000;
-interface BuiltIndex { builtAt: number; count: number; entries: CatalogIndexEntry[] }
+interface BuiltIndex { builtAt: number; count: number; json: Buffer; gzipped: Buffer }
 let indexCache: BuiltIndex | null = null;
 let indexBuild: Promise<BuiltIndex> | null = null;
 
@@ -44,7 +45,9 @@ async function getCatalogIndex(): Promise<BuiltIndex> {
     const entries = toIndexEntries(
       snap.docs.map((d) => ({ id: d.id, name: d.get('name'), vendor: d.get('vendor'), active: d.get('active') })),
     );
-    indexCache = { builtAt: Date.now(), count: entries.length, entries };
+    const builtAt = Date.now();
+    const json = Buffer.from(JSON.stringify({ builtAt, count: entries.length, entries }));
+    indexCache = { builtAt, count: entries.length, json, gzipped: gzipSync(json) };
     return indexCache;
   })().finally(() => { indexBuild = null; });
   return indexBuild;
@@ -101,11 +104,19 @@ export function createApiApp(): Express {
    * build is the only time it costs ~15k document reads; the CDN and browser
    * caches absorb the rest.
    */
-  app.get('/v1/catalog-index.json', async (_req, res) => {
+  app.get('/v1/catalog-index.json', async (req, res) => {
     try {
       const index = await getCatalogIndex();
       res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
-      res.json(index);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Vary', 'Accept-Encoding');
+      // ~1.2 MB raw for 15k entries; Cloud Run does not compress for us.
+      if (req.acceptsEncodings('gzip')) {
+        res.setHeader('Content-Encoding', 'gzip');
+        res.send(index.gzipped);
+      } else {
+        res.send(index.json);
+      }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       captureException(err, { route: 'catalog-index' });
