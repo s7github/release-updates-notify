@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Card, CardContent, Typography, Box, Chip, IconButton, Button, Collapse, Avatar } from "@mui/material";
+import { Card, CardContent, Typography, Box, Chip, IconButton, Button, Collapse, Avatar, Tooltip } from "@mui/material";
 import { Bell, BellOff, ChevronDown, ChevronUp, ExternalLink, Shield, Zap, Bug, Settings2, History as HistoryIcon, ArrowRight, Sparkles, PlusCircle, Wrench } from "lucide-react";
 import { format } from "date-fns";
 import { Link, useNavigate } from "react-router-dom";
@@ -84,7 +84,9 @@ export default function ReleaseCard({
             </Box>
           </Box>
           {onToggleFollow && (
+            <Tooltip title={isFollowed ? `Mute notifications for ${release.softwareName}` : `Follow ${release.softwareName}`}>
             <IconButton 
+              aria-label={isFollowed ? `Mute notifications for ${release.softwareName}` : `Follow ${release.softwareName}`}
               onClick={(e) => {
                 e.stopPropagation();
                 onToggleFollow();
@@ -95,6 +97,7 @@ export default function ReleaseCard({
             >
               {isFollowed ? <Bell size={18} /> : <BellOff size={18} />}
             </IconButton>
+            </Tooltip>
           )}
         </Box>
 

@@ -1,7 +1,7 @@
 {
-  "name": "UpdateNotify PWA",
-  "short_name": "UpdateNotify",
-  "description": "Smart release discovery engine using Gemini AI.",
+  "name": "Release Scope",
+  "short_name": "Release Scope",
+  "description": "See every release the moment it ships.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#050505",

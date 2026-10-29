@@ -58,7 +58,7 @@ export default function Library() {
       await updateDoc(doc(db, "interests", id), {
         following: !currentStatus
       });
-      toast.success(!currentStatus ? "Following - updates appear in For You" : "Not following - updates move to Explore");
+      toast.success(!currentStatus ? "Following – you'll get its updates" : "Muted – saved in your library, no notifications");
     } catch (e) {
       toast.error("Failed to update status");
     }
@@ -70,12 +70,12 @@ export default function Library() {
       return;
     }
     try {
-      // Export all release notes for the user's tracked software. Firestore's
+      // Export all release notes for the user's followed software. Firestore's
       // `in` operator is chunked, so a library larger than 10 does not silently
       // export only the first slice.
       const followedIds = interests.map(i => i.softwareId).filter(Boolean) as string[];
       if (followedIds.length === 0) {
-        toast.error("No tracked software to export.");
+        toast.error("No followed software to export.");
         return;
       }
 
@@ -110,7 +110,7 @@ export default function Library() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `updatenotify-export-${new Date().toISOString().split('T')[0]}.${format}`;
+      a.download = `releasescope-export-${new Date().toISOString().split('T')[0]}.${format}`;
       a.click();
       URL.revokeObjectURL(url);
       toast.success(`Exported ${data.length} release notes`);
@@ -143,7 +143,7 @@ export default function Library() {
           <Box>
             <Typography variant="h4" sx={{ fontWeight: 900, lineHeight: 1.2, fontSize: { xs: '1.75rem', sm: '2.125rem' } }}>My Library</Typography>
             <Typography variant="caption" color="text.secondary">
-              {interests.length} track{interests.length === 1 ? '' : 's'} • {tierLabel(tier)} plan • {
+              {interests.length} item{interests.length === 1 ? '' : 's'} • {tierLabel(tier)} plan • {
                 maxTracked === null ? 'unlimited' : `${interests.length}/${maxTracked} used`
               }
             </Typography>
@@ -157,7 +157,7 @@ export default function Library() {
           sx={{ borderRadius: 3, px: 3, fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
           color={atLimit ? 'inherit' : 'primary'}
         >
-          Track a Software
+          Follow software
         </Button>
       </Box>
 
@@ -168,7 +168,7 @@ export default function Library() {
               <TextField 
                 size="small"
                 fullWidth
-                placeholder="Search tracked items..."
+                placeholder="Search your library..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 slotProps={{
@@ -196,7 +196,7 @@ export default function Library() {
             </Box>
 
             <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-              Tracked Items <span style={{ color: '#F27D26', fontSize: '0.8rem' }}>({filteredInterests.length})</span>
+              Your Library <span style={{ color: '#F27D26', fontSize: '0.8rem' }}>({filteredInterests.length})</span>
             </Typography>
             
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -238,7 +238,7 @@ export default function Library() {
                   <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                     {interest.type === 'software' && (
                       <Chip 
-                        label={interest.following ? "Following" : "Not Following"}
+                        label={interest.following ? "Following" : "Muted"}
                         size="small"
                         icon={interest.following ? <Bell size={14} /> : <BellOff size={14} />}
                         onClick={() => toggleFollowing(interest.id, !!interest.following)}
@@ -292,7 +292,7 @@ export default function Library() {
             
             <Paper sx={{ p: 3, border: '1px solid rgba(255, 255, 255, 0.05)', bgcolor: 'rgba(255, 255, 255, 0.01)' }}>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Export your tracked release notes to CSV or JSON for local archiving and self-hosting.
+                Export your followed release notes to CSV or JSON for local archiving and self-hosting.
                 {!canExport && ' Export is a Pro feature.'}
               </Typography>
               

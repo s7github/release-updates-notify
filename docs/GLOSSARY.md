@@ -128,3 +128,7 @@ now the deny half of the rules test suite.
 
 **Load-bearing** — used here for configuration that looks removable and is not.
 Specifically `android.builtInKotlin=false` and `android.newDsl=false`.
+
+**UpdateNotify** — former name of the product, now "Release Scope". Still used in
+code identifiers (Kotlin packages, Firestore database id, Cloud Run service names,
+service-worker cache key); see ADR-0020.

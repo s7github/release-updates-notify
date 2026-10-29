@@ -6,7 +6,8 @@ import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 import { Toaster } from "react-hot-toast";
 import toast from "react-hot-toast";
 
-import { auth, db, authErrorMessage, completeRedirectSignIn } from "./services/firebase";
+import { auth, db, completeRedirectSignIn } from "./services/firebase";
+import { showAuthNotice } from "./services/authErrors";
 import { effectiveTier, type SubscriptionTier } from "./services/entitlements";
 import { theme } from "./theme";
 
@@ -71,7 +72,7 @@ export default function App() {
   // it explicitly means the button works even when the popup was blocked.
   useEffect(() => {
     completeRedirectSignIn().catch((error) => {
-      toast.error(authErrorMessage(error));
+      showAuthNotice(error, toast);
     });
   }, []);
 

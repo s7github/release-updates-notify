@@ -5,6 +5,7 @@ import { auth, db } from "../../services/firebase";
 import { useAuth } from "../../App";
 import { tierLabel } from "../../services/entitlements";
 import { useState, useEffect } from "react";
+import { BRAND } from "../../brand";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 
 export default function Navbar() {
@@ -30,7 +31,10 @@ export default function Navbar() {
       <Container maxWidth="lg">
         <Toolbar sx={{ px: { xs: 0 } }}>
           <Typography variant="h6" component={Link} to="/" sx={{ flexGrow: 1, textDecoration: 'none', color: 'inherit', fontWeight: 800, letterSpacing: -1, fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-            UPDATE<span style={{ color: '#F27D26' }}>NOTIFY</span>
+            <span aria-label={BRAND.name}>
+              <span style={{ fontWeight: 400 }}>{BRAND.wordmark.light}</span>
+              <span style={{ fontWeight: 800 }}>{BRAND.wordmark.bold}</span>
+            </span>
           </Typography>
 
           <Box sx={{ display: 'flex', gap: { xs: 0.2, sm: 1 }, alignItems: "center" }}>

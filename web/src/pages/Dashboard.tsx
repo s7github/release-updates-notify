@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { 
-  Container, Typography, Tabs, Tab, Box, Grid, Button, TextField, 
+  Container, Typography, Tabs, Tab, Box, Grid, TextField,
   InputAdornment, Chip, CircularProgress, Paper, Divider, 
   Select, MenuItem, FormControl, InputLabel, Pagination 
 } from "@mui/material";
@@ -10,18 +10,21 @@ import { useAuth } from "../App";
 import { db } from "../services/firebase";
 import { historyStart, tierLabel } from "../services/entitlements";
 import ReleaseCard from "../components/Dashboard/ReleaseCard";
+import EmptyFeed from "../components/Dashboard/EmptyFeed";
+import FirstRun from "../components/Onboarding/FirstRun";
+import { countFeedInputs, feedState } from "../services/feedState";
 
-import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 
 const ITEMS_PER_PAGE = 10;
 
 export default function Dashboard() {
   const { user, tier } = useAuth();
-  const [tab, setTab] = useState(0); // 0: For You, 1: Explore All
+  const [tab, setTab] = useState(0); // 0: Following, 1: Muted
   const [releases, setReleases] = useState<any[]>([]);
   const [interests, setInterests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [interestsLoaded, setInterestsLoaded] = useState(false);
   const [liveState, setLiveState] = useState<"idle" | "live" | "cache">("idle");
   const [liveAt, setLiveAt] = useState<Date | null>(null);
   
@@ -44,8 +47,10 @@ export default function Dashboard() {
     const q = query(collection(db, "interests"), where("userId", "==", user.uid));
     const unsubscribe = onSnapshot(q, (snap) => {
       setInterests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setInterestsLoaded(true);
     }, () => {
       setInterests([]);
+      setInterestsLoaded(true);
       setLoading(false);
     });
     return () => unsubscribe();
@@ -153,7 +158,7 @@ export default function Dashboard() {
   const filteredReleases = useMemo(() => {
     const softwareInterests = interests.filter(i => i.type === 'software');
     const followedIds = softwareInterests.filter(i => i.following === true).map(i => i.softwareId);
-    // Everything in the library that is NOT explicitly following=true is in Explore All
+    // Everything in the library that is NOT following=true is under Muted
     const notFollowedIds = softwareInterests.filter(i => i.following !== true).map(i => i.softwareId);
     
     let base = releases;
@@ -195,11 +200,45 @@ export default function Dashboard() {
   }, [releases, tab, interests, startDate, endDate, timelineCategory, selectedTopic, tier]);
 
   const paginatedReleases = useMemo(() => {
-    const start = (page - 1) * ITEMS_PER_PAGE;
+    const safePage = Math.min(page, Math.max(1, Math.ceil(filteredReleases.length / ITEMS_PER_PAGE)));
+    const start = (safePage - 1) * ITEMS_PER_PAGE;
     return filteredReleases.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredReleases, page]);
 
+  // Any filter change goes back to page 1; clamp so a shrinking result set
+  // never leaves the user on an empty page.
+  useEffect(() => { setPage(1); }, [startDate, endDate, dateRangeType, tab, timelineCategory, selectedTopic]);
+  const pageCount = Math.max(1, Math.ceil(filteredReleases.length / ITEMS_PER_PAGE));
+  useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
+
   const topics = interests.filter(i => i.type === 'topic').map(i => i.topic);
+
+  const softwareInterests = interests.filter((i) => i.type === "software");
+  const followedCount = softwareInterests.filter((i) => i.following === true).length;
+  const state = feedState({
+    ...countFeedInputs(interests, releases),
+    visibleCount: filteredReleases.length,
+  });
+  const showFirstRun = interestsLoaded && softwareInterests.length === 0;
+  const canWiden = timelineCategory !== "All" || selectedTopic !== "All" || (tier !== "FREE" && dateRangeType !== "1y");
+
+  const followAll = async () => {
+    const targets = softwareInterests.filter((i) => i.following !== true);
+    if (targets.length === 0) return;
+    const results = await Promise.allSettled(
+      targets.map((i) => updateDoc(doc(db, "interests", i.id), { following: true })),
+    );
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed === 0) toast.success("Following everything in your library");
+    else toast.error(`Couldn't update ${failed} of ${targets.length} items. Please try again.`);
+  };
+
+  const showWiderRange = () => {
+    setTimelineCategory("All");
+    setSelectedTopic("All");
+    handleDateTypeChange("1y");
+    setPage(1);
+  };
 
   const toggleInterestFollow = async (softwareId: string) => {
     const interest = interests.find(i => i.softwareId === softwareId);
@@ -209,7 +248,7 @@ export default function Dashboard() {
       await updateDoc(doc(db, "interests", interest.id), {
         following: !interest.following
       });
-      toast.success(!interest.following ? "Following product" : "Stopped following");
+      toast.success(!interest.following ? "Following – you'll get its updates" : "Muted – saved in your library, no notifications");
     } catch (e) {
       toast.error("Failed to update status");
     }
@@ -219,10 +258,11 @@ export default function Dashboard() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
+      {!showFirstRun && interestsLoaded && (
       <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
         <Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-            <Typography variant="h4" sx={{ fontWeight: 800, lineHeight: 1.2 }}>Release Updates</Typography>
+            <Typography variant="h4" component="h1" sx={{ fontWeight: 800, lineHeight: 1.2 }}>Release Updates</Typography>
             <Chip
               size="small"
               label={liveState === 'live' ? 'LIVE' : liveState === 'cache' ? 'CACHED' : 'IDLE'}
@@ -232,25 +272,18 @@ export default function Dashboard() {
             />
           </Box>
           <Typography variant="caption" color="text.secondary">
-            Tracking <b>{interests.length}</b> items • Plan: <b>{tierLabel(tier)}</b>
+            Following <b>{followedCount}</b> of <b>{softwareInterests.length}</b> saved • Plan: <b>{tierLabel(tier)}</b>
             {tier === 'FREE' ? ' • Last 30 days' : ' • Full history'}
             {liveAt ? ` • Updated ${liveAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
           </Typography>
         </Box>
       </Box>
+      )}
 
-      {interests.length === 0 && !loading ? (
-        <Paper sx={{ textAlign: "center", py: 12, bgcolor: "rgba(255, 255, 255, 0.02)", borderRadius: 4, border: '1px dashed rgba(255, 255, 255, 0.1)' }}>
-          <Typography variant="h5" color="text.secondary" gutterBottom sx={{ fontWeight: 700 }}>{tier === "FREE" ? "Welcome to UpdateNotify!" : `You're on ${tier === "PRO" ? "Pro" : "Enterprise"}`}</Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, maxWidth: 480, mx: 'auto' }}>
-            {tier === "FREE"
-              ? "Follow up to 5 software items to get started. Upgrade to Pro for unlimited tracking and detailed release notes."
-              : "Track unlimited software and get detailed release notes. Follow something to see it here."}
-          </Typography>
-          <Button component={Link} to="/library" variant="contained" size="large" sx={{ borderRadius: 100, px: 4 }}>
-            Go to Library
-          </Button>
-        </Paper>
+      {!interestsLoaded ? (
+        <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}><CircularProgress /></Box>
+      ) : showFirstRun ? (
+        <FirstRun />
       ) : (
         <>
           <Paper sx={{ mb: 4, p: 3, border: '1px solid rgba(255, 255, 255, 0.05)', bgcolor: 'rgba(255, 255, 255, 0.01)' }}>
@@ -308,8 +341,8 @@ export default function Dashboard() {
 
       <Box sx={{ borderBottom: 1, borderColor: 'rgba(255, 255, 255, 0.1)', mb: 3 }}>
         <Tabs value={tab} onChange={(_, v) => { setTab(v); setPage(1); }} textColor="primary" indicatorColor="primary">
-          <Tab label="Primary" sx={{ fontWeight: 700 }} />
-          <Tab label="All" sx={{ fontWeight: 700 }} />
+          <Tab label="Following" sx={{ fontWeight: 700 }} />
+          <Tab label="Muted" sx={{ fontWeight: 700 }} />
         </Tabs>
       </Box>
 
@@ -368,15 +401,18 @@ export default function Dashboard() {
                 />
               </Grid>
             ))}
-            {paginatedReleases.length === 0 && (
+            {paginatedReleases.length === 0 && state !== "has-releases" && (
               <Grid size={{ xs: 12 }}>
-                <Box sx={{ textAlign: "center", py: 12, bgcolor: "rgba(255, 255, 255, 0.02)", borderRadius: 4, border: '1px dashed rgba(255, 255, 255, 0.1)' }}>
-                  <Typography variant="h6" color="text.secondary" gutterBottom>No Updates Found</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Nothing has shipped in this window yet. The feed updates live as the pipeline publishes releases.
-                    {tier === 'FREE' && ' Free shows the last 30 days; Pro shows the full timeline.'}
-                  </Typography>
-                </Box>
+                <EmptyFeed
+                  state={state}
+                  tab={tab === 0 ? "following" : "muted"}
+                  libraryCount={softwareInterests.length}
+                  mutedCount={softwareInterests.filter((i) => i.following !== true).length}
+                  onFollowAll={followAll}
+                  onShowWiderRange={showWiderRange}
+                  canWiden={canWiden}
+                  isFree={tier === "FREE"}
+                />
               </Grid>
             )}
           </Grid>

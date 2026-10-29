@@ -3,16 +3,17 @@ import { Box, Button, Container, Typography, CircularProgress } from "@mui/mater
 import { motion } from "motion/react";
 import { Bell, Zap, ShieldCheck, Radio } from "lucide-react";
 import toast from "react-hot-toast";
-import { signInWithGoogle, authErrorMessage } from "../services/firebase";
+import { signInWithGoogle } from "../services/firebase";
+import { showAuthNotice } from "../services/authErrors";
 
 const plans = [
   {
     name: "Free",
-    desc: "5 tracked items, a 30-day release history, and push notifications.",
+    desc: "Follow up to 5 items, a 30-day release history, and push notifications.",
   },
   {
     name: "Pro",
-    desc: "Unlimited tracking, full release history, deep backfill and CSV/JSON export.",
+    desc: "Unlimited follows, full release history, deep backfill and CSV/JSON export.",
   },
   {
     name: "Enterprise",
@@ -29,7 +30,7 @@ export default function Landing() {
       await signInWithGoogle();
       // A redirect fallback returns null here; the page is about to reload.
     } catch (error) {
-      toast.error(authErrorMessage(error));
+      showAuthNotice(error, toast);
       setSigningIn(false);
     }
   };

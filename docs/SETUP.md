@@ -229,9 +229,10 @@ pnpm test         # 63 tests; no network, emulator or credentials needed
 pnpm run build    # -> dist/index.js
 ```
 
-The `api` service is deployed on the Vercel project `release-update-backend`.
-The poller and notifier are written for Cloud Run + Pub/Sub; deploying them there
-is an infrastructure step described in `backend/README.md`. See
+The `api` service runs on Cloud Run in `europe-west4` (see ADR-0019). The old
+Vercel project `release-update-backend` was deleted on 2026-10-28. The poller and
+notifier are written for Cloud Run + Pub/Sub; deploying them there is an
+infrastructure step described in `backend/README.md`. See
 [`STATUS.md`](STATUS.md) for what is actually running.
 
 ---

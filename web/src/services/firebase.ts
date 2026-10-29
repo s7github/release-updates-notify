@@ -53,22 +53,6 @@ export async function completeRedirectSignIn(): Promise<User | null> {
   }
 }
 
-export function authErrorMessage(error: unknown): string {
-  const code = (error as { code?: string }).code ?? "";
-  switch (code) {
-    case "auth/unauthorized-domain":
-      return "This domain is not authorised for Google sign-in yet. Add it in Firebase Auth → Settings → Authorized domains.";
-    case "auth/popup-blocked":
-      return "Your browser blocked the sign-in window. Allow pop-ups and try again.";
-    case "auth/network-request-failed":
-      return "Network problem while signing in. Check your connection and try again.";
-    case "auth/too-many-requests":
-      return "Too many sign-in attempts. Wait a moment and try again.";
-    default:
-      return error instanceof Error ? error.message : "Sign-in failed. Please try again.";
-  }
-}
-
 // Connection test as per critical constraint
 export async function testConnection() {
   try {

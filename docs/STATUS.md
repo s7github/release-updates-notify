@@ -33,6 +33,28 @@ the browser's Gemini client and open proxy. Details below.
 
 ---
 
+## 1b. Release Scope rename and onboarding (2026-10-28 / 29)
+
+The product is being renamed **Release Scope** on `releasescope.com` (ADR-0020; DNS at
+Namecheap). Three approved plans, built in order on separate branches:
+
+1. `docs/superpowers/plans/2026-10-28-batch1-onboarding-and-errors.md` — rename,
+   first-run guidance, empty-feed states, plain sign-in errors, stale Vercel cleanup.
+   **Built on branch `feat/web-onboarding-batch1`, uncommitted.** Lint, 19 unit tests
+   (Vitest, new) and the web build pass. **Not yet checked in a browser with a signed-in
+   account**: first-run checklist, each empty-feed state, Follow-all, cancelled sign-in.
+   Known leftovers: "user tracking" wording in the delete-account list
+   (`SoftwareDetails.tsx`); `pnpm add` needs `--store-dir C:\Users\saura\.pnpm\store\v10`
+   on this machine until the pnpm store location is fixed.
+2. `docs/superpowers/plans/2026-10-28-batch2-signin-brand-and-autocomplete.md` —
+   branded Google sign-in (owner console steps + `authDomain`), typo-tolerant autocomplete.
+3. `docs/superpowers/plans/2026-10-28-batch3-public-site-and-seo.md` — prerendered
+   marketing pages, sitemap, then public product pages (needs ADR superseding ADR-0009 in part).
+
+The Vercel project `release-update-backend` was deleted by the owner; stale references
+are listed in Batch 1 Task 8. Whether the `web` Vercel project is still deployed has
+not been verified.
+
 ## 2. What changed in this pass (2026-10-27)
 
 ### 2.0 Gemini default model was retired
@@ -254,7 +276,7 @@ Everything here was actually run on 2026-10-27, in this working tree.
 | Admin API smoke test | Local `api` against Firestore + Auth emulators: `/v1/me` returned FREE; admin `PATCH /v1/admin/users/:uid` set PRO and `/v1/me` reflected it; a non-admin call to the same route returned **403**; registry PATCH and DELETE returned the expected counts; 3 `admin_audit` entries were written |
 | Tier gate smoke test | FREE user `POST /v1/refresh {includeHistory:true}` returned **403**; `/v1/me` reported `historyDays: 30`, `maxTrackedItems: 5` |
 | Live web host | `https://release-updates-psi.vercel.app/` returned the app HTML (landing page renders) |
-| Live API host | `https://release-update-backend.vercel.app/healthz` → `{"status":"ok","service":"api"}` |
+| API host | Cloud Run (`https://updatenotify-api-vwdnd6mwaq-ez.a.run.app`, the default in `web/src/services/api.ts`). The earlier Vercel host `release-update-backend` was deleted on 2026-10-28; its recorded health check no longer applies. |
 
 **Not verified:**
 
@@ -300,9 +322,10 @@ This is the single biggest gap against "data is live and real-time".
 
 ### Deployment state
 
-- `web` and `release-update-backend` are Vercel projects. The API is running the
-  pre-pass code. `VITE_API_URL` should be set on the web project to the API host;
-  the code falls back to `https://release-update-backend.vercel.app`.
+- `web` is a Vercel project (its current deployment has not been re-verified since
+  the `release-update-backend` Vercel project was deleted on 2026-10-28). The API
+  lives on Cloud Run; the web code falls back to
+  `https://updatenotify-api-vwdnd6mwaq-ez.a.run.app` when `VITE_API_URL` is unset.
 - Vercel Deployment Protection / Firebase Auth authorized domains were an open
   owner action in the previous status. The landing page is publicly reachable
   now; confirm the Vercel domain is in Firebase Auth's authorized domains before

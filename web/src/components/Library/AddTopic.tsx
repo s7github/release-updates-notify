@@ -20,7 +20,7 @@ export default function AddTopic({ trackedCount }: { trackedCount: number }) {
     const trimmed = topic.trim();
     if (!trimmed || !user) return;
     if (atLimit) {
-      toast.error(`The ${tier} plan tracks up to ${limit} items. Remove one or upgrade to Pro.`);
+      toast.error(`The ${tier} plan lets you follow up to ${limit} items. Remove one or upgrade to Pro.`);
       return;
     }
     if (trimmed.length > 200) {
@@ -35,7 +35,7 @@ export default function AddTopic({ trackedCount }: { trackedCount: number }) {
       // overwrite, not a duplicate notification.
       const ref = doc(db, "interests", `${user.uid}_topic_${slug || 'untitled'}`);
       if ((await getDoc(ref)).exists()) {
-        toast.error(`You already track "${trimmed}"`);
+        toast.error(`You already follow "${trimmed}"`);
         return;
       }
 
@@ -73,7 +73,7 @@ export default function AddTopic({ trackedCount }: { trackedCount: number }) {
           <Hash size={20} />
         </Box>
         <Box>
-          <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>Track a Topic</Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>Follow a Topic</Typography>
           <Typography variant="caption" color="text.secondary">Follow general industry themes or technologies.</Typography>
         </Box>
       </Box>

@@ -11,6 +11,7 @@ import { db } from "../services/firebase";
 import { limitsFor, tierLabel } from "../services/entitlements";
 import { userApi, ApiError } from "../services/api";
 import { searchCatalog } from "../services/catalogSearch";
+import { followSoftware } from "../services/followSoftware";
 import toast from "react-hot-toast";
 import { motion } from "motion/react";
 
@@ -97,37 +98,43 @@ export default function AddSoftware() {
   const addToLibrary = async (item: SearchItem) => {
     if (!user) return;
     if (atLimit) {
-      toast.error(`The ${tierLabel(tier)} plan tracks up to ${limits.maxTrackedItems} items. Remove one or upgrade.`);
+      toast.error(`The ${tierLabel(tier)} plan lets you follow up to ${limits.maxTrackedItems} items. Remove one or upgrade.`);
       return;
     }
 
     const type = item.type === "topic" ? "topic" : "software";
     const name = item.name;
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
-    const interestId = type === "software"
-      ? `${user.uid}_${item.id}`
-      : `${user.uid}_topic_${slug || "untitled"}`;
+    const interestId = `${user.uid}_topic_${slug || "untitled"}`; // topics only; software ids live in followSoftware
 
     try {
-      // Deterministic id: a repeated follow is an idempotent overwrite, not a
-      // duplicate notification (docs/DATA_MODEL.md §2).
-      const ref = doc(db, "interests", interestId);
-      if ((await getDoc(ref)).exists()) {
-        toast.error(`You already track "${name}"`);
-        return;
+      if (type === "software") {
+        const result = await followSoftware(user.uid, item);
+        if (!result.ok) {
+          toast.error(`You already follow "${name}"`);
+          return;
+        }
+      } else {
+        // Deterministic id: a repeated follow is an idempotent overwrite, not a
+        // duplicate notification (docs/DATA_MODEL.md §2).
+        const ref = doc(db, "interests", interestId);
+        if ((await getDoc(ref)).exists()) {
+          toast.error(`You already follow "${name}"`);
+          return;
+        }
+
+        await setDoc(ref, {
+          userId: user.uid,
+          softwareId: null,
+          topic: name,
+          softwareName: name,
+          type,
+          following: true,
+          createdAt: new Date().toISOString(),
+        });
       }
 
-      await setDoc(ref, {
-        userId: user.uid,
-        softwareId: type === "software" ? item.id : null,
-        topic: type === "topic" ? name : null,
-        softwareName: name,
-        type,
-        following: true,
-        createdAt: new Date().toISOString(),
-      });
-
-      toast.success(`Tracking ${name}`);
+      toast.success(`Following ${name}`);
       navigate("/library");
     } catch (e) {
       console.error("Add failed", e);
@@ -146,14 +153,17 @@ export default function AddSoftware() {
       </Button>
 
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ fontWeight: 900, mb: 1, lineHeight: 1.2 }}>Discover Software</Typography>
+        <Typography variant="h4" sx={{ fontWeight: 900, mb: 1, lineHeight: 1.2 }}>Find software to follow</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+          Pick what you want to hear about. We'll tell you when a new version ships.
+        </Typography>
         <Typography variant="caption" color="text.secondary">
           Search the catalogue first. If it is missing, one explicit AI discovery finds its changelog.
         </Typography>
         <Box sx={{ mt: 2 }}>
           <Chip
             size="small"
-            label={`${tierLabel(tier)} plan • ${trackedCount}${limits.maxTrackedItems === null || isAdmin ? '' : ` / ${limits.maxTrackedItems}`} tracked`}
+            label={`${tierLabel(tier)} plan • ${trackedCount}${limits.maxTrackedItems === null || isAdmin ? '' : ` / ${limits.maxTrackedItems}`} followed`}
             color={atLimit ? "warning" : "default"}
             variant="outlined"
             sx={{ fontWeight: 700 }}
@@ -163,7 +173,7 @@ export default function AddSoftware() {
 
       {atLimit && (
         <Alert severity="warning" sx={{ mb: 3 }}>
-          You have reached the {tierLabel(tier)} limit of {limits.maxTrackedItems} tracked items.
+          You have reached the {tierLabel(tier)} limit of {limits.maxTrackedItems} followed items.
           Remove one in your library, or ask an administrator to upgrade the account.
         </Alert>
       )}
@@ -233,7 +243,7 @@ export default function AddSoftware() {
                   startIcon={<Plus size={16} />}
                   sx={{ borderRadius: 100 }}
                 >
-                  Track Updates
+                  Follow
                 </Button>
               </Box>
             </Paper>

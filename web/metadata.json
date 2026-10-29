@@ -1,12 +1,12 @@
 {
-  "name": "UpdateNotify PWA",
-  "description": "A smart release discovery engine that filters software updates using Gemini AI to highlight features and security optimizations.",
+  "name": "Release Scope",
+  "description": "Follow the software you rely on. Release Scope reads changelogs for you and tells you when something genuinely new ships.",
   "requestFramePermissions": [
     "notifications"
   ],
   "majorCapabilities": [
     "Full-stack software update tracking",
-    "Gemini-powered change extraction",
+    "Plain-language summaries of every release",
     "PWA with offline support",
     "Admin dashboard for registry management"
   ]

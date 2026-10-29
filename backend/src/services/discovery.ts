@@ -36,7 +36,7 @@ const PROBE = {
       throw new Error('redirect to a non-public address blocked');
     }
   },
-  headers: { 'User-Agent': 'UpdateNotify-Discovery/1.0 (+release tracker)' },
+  headers: { 'User-Agent': 'ReleaseScope-Discovery/1.0 (+https://releasescope.com)' },
 } as const;
 
 /**
