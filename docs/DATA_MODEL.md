@@ -144,6 +144,14 @@ New entries are created by the `api` service during discovery.
 
 ---
 
+### Catalog index (derived, not stored)
+
+`GET /v1/catalog-index.json` on `api` returns `{ builtAt, count, entries }`, each entry
+`{ id, name, key, slug, vendor? }`, built from active, named `master_registry` documents
+([ADR-0021](adr/0021-client-side-catalog-index.md)). `slug` is computed on build, not persisted.
+
+---
+
 ## 4. `release_notes/{noteId}`
 
 One structured release. The primary content of the app.

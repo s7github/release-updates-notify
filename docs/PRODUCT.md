@@ -71,7 +71,9 @@ which is why the catalog cannot assume everything has a GitHub releases page.
 **Secondary: an operator** curating the catalog, fixing bad source URLs and
 watching the pipeline. That is a desktop job on wide data grids, which is why the
 web app is retained rather than ported
-([ADR-0009](adr/0009-keep-web-as-admin-surface.md)).
+([ADR-0009](adr/0009-keep-web-as-admin-surface.md)). The web app also hosts the
+public marketing pages on `releasescope.com`
+([ADR-0022](adr/0022-public-marketing-and-catalog-pages.md)).
 
 ---
 

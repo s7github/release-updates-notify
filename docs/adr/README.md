@@ -23,6 +23,8 @@ and why matters most when you are about to change something.
 | [0009](0009-keep-web-as-admin-surface.md) | Keep the React PWA as the operator surface | Accepted |
 | [0010](0010-agp9-toolchain-and-ksp-flags.md) | AGP 9 toolchain, and the two flags that make KSP work | Accepted |
 | [0011](0011-pnpm-over-npm.md) | pnpm over npm | Accepted |
+| [0021](0021-client-side-catalog-index.md) | Search suggestions run locally over a downloaded catalog index | Accepted |
+| [0022](0022-public-marketing-and-catalog-pages.md) | Serve public marketing pages from the web app, pre-rendered | Accepted |
 
 ## Writing one
 

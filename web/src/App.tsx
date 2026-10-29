@@ -6,13 +6,15 @@ import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 import { Toaster } from "react-hot-toast";
 import toast from "react-hot-toast";
 
-import { auth, db, completeRedirectSignIn } from "./services/firebase";
+import { auth, db, completeRedirectSignIn, signInWithGoogle } from "./services/firebase";
 import { showAuthNotice } from "./services/authErrors";
 import { effectiveTier, type SubscriptionTier } from "./services/entitlements";
 import { theme } from "./theme";
 
 // Components
-import Landing from "./pages/Landing";
+import Home from "./pages/public/Home";
+import { PUBLIC_ROUTES } from "./pages/public/routes";
+import { PublicActionsContext } from "./seo/PublicActions";
 import Navbar from "./components/layout/Navbar";
 
 // Dense routes are split out: the login page should not download the admin
@@ -180,6 +182,18 @@ export default function App() {
     return () => clearInterval(timer);
   }, [rawTier, tierExpiresAt]);
 
+  const [signingIn, setSigningIn] = useState(false);
+  const handleSignIn = async () => {
+    setSigningIn(true);
+    try {
+      await signInWithGoogle(); // a redirect fallback returns null and the page reloads
+    } catch (error) {
+      showAuthNotice(error, toast);
+    } finally {
+      setSigningIn(false);
+    }
+  };
+
   if (loading) {
     return (
       <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#050505' }}>
@@ -192,6 +206,7 @@ export default function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthContext.Provider value={{ user, isAdmin, tier, tierExpiresAt, loading }}>
+       <PublicActionsContext.Provider value={{ signedIn: !!user, signingIn, signIn: handleSignIn }}>
           <Router>
             <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
               {user && <Navbar />}
@@ -202,7 +217,12 @@ export default function App() {
                   </Box>
                 }>
                   <Routes>
-                    <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
+                    <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Home />} />
+                    {Object.entries(PUBLIC_ROUTES)
+                      .filter(([path]) => path !== "/")
+                      .map(([path, { Component }]) => (
+                        <Route key={path} path={path} element={<Component />} />
+                      ))}
                     <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/" />} />
                     <Route path="/admin" element={isAdmin ? <Admin /> : <Navigate to="/dashboard" />} />
                     <Route path="/admin/processing" element={isAdmin ? <Processing /> : <Navigate to="/dashboard" />} />
@@ -215,6 +235,7 @@ export default function App() {
             </Box>
           </Router>
           <Toaster position="top-right" />
+       </PublicActionsContext.Provider>
         </AuthContext.Provider>
       </ThemeProvider>
   );

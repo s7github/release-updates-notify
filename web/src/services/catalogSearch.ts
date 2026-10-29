@@ -3,6 +3,7 @@ import {
   type DocumentData, type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { normaliseSearch } from "./searchText";
 
 /**
  * Catalog search over `master_registry`, built on two derived fields written by
@@ -14,15 +15,7 @@ import { db } from "./firebase";
  * whole catalog.
  */
 
-/** Must match backend/src/lib/searchKey.ts `normaliseSearch`. */
-export function normaliseSearch(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
+export { normaliseSearch } from "./searchText";
 
 const PAGE = 20;
 

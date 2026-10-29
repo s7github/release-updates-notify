@@ -40,16 +40,35 @@ Namecheap). Three approved plans, built in order on separate branches:
 
 1. `docs/superpowers/plans/2026-10-28-batch1-onboarding-and-errors.md` — rename,
    first-run guidance, empty-feed states, plain sign-in errors, stale Vercel cleanup.
-   **Built on branch `feat/web-onboarding-batch1`, uncommitted.** Lint, 19 unit tests
-   (Vitest, new) and the web build pass. **Not yet checked in a browser with a signed-in
+   **Committed on `main` (5a43d39).** **Not yet checked in a browser with a signed-in
    account**: first-run checklist, each empty-feed state, Follow-all, cancelled sign-in.
    Known leftovers: "user tracking" wording in the delete-account list
    (`SoftwareDetails.tsx`); `pnpm add` needs `--store-dir C:\Users\saura\.pnpm\store\v10`
    on this machine until the pnpm store location is fixed.
 2. `docs/superpowers/plans/2026-10-28-batch2-signin-brand-and-autocomplete.md` —
-   branded Google sign-in (owner console steps + `authDomain`), typo-tolerant autocomplete.
-3. `docs/superpowers/plans/2026-10-28-batch3-public-site-and-seo.md` — prerendered
-   marketing pages, sitemap, then public product pages (needs ADR superseding ADR-0009 in part).
+   **Code built on branch `feat/web-signin-search-public-site`, uncommitted** (batches 2 and 3
+   share this one branch). Done: `authDomain` -> `releasescope.com` with the `/__/auth/*`
+   proxy in `web/vercel.json` (`VITE_AUTH_DOMAIN` overrides it locally); matcher
+   `services/suggest.ts` (typo tolerance, 11 tests); `GET /v1/catalog-index.json` on `api`
+   (`lib/catalogIndex.ts`, 4 tests, in-memory 6 h cache); `SoftwareSearch` combobox in
+   Add software; ADR-0021. **Not done, owner steps:** Google Auth Platform branding and
+   publishing status, Firebase Authorized domains (`releasescope.com`, `www`), Google OAuth
+   redirect URI `https://releasescope.com/__/auth/handler`. **Do not deploy `web` before the
+   last two are done or Google sign-in breaks.** Not verified: sign-in on the live domain
+   (popup, redirect, cancel); the autocomplete in a browser (needs a signed-in account and
+   the new `api` revision); the real index size.
+3. `docs/superpowers/plans/2026-10-28-batch3-public-site-and-seo.md` — **Phase A built, same
+   branch, uncommitted:** ADR-0022; six pre-rendered pages (`/`, `/demo`, `/how-it-works`,
+   `/pricing`, `/privacy`, `/terms`) from `seo/pages.ts`; `scripts/prerender.tsx` (runs after
+   `vite build`, also writes `sitemap.xml` and the noindex `app.html` SPA shell);
+   `robots.txt`, `favicon.svg`, `og-default.png`; `Landing.tsx` replaced by `Home`. Checked
+   locally: one `h1`, own title, canonical and JSON-LD in each built HTML file; no horizontal
+   overflow at 400 px. **Open:** privacy/terms are drafts with a placeholder contact line the
+   owner must fill; `releasescope.com` currently 308-redirects to `www`, but canonicals use the
+   apex (set the apex as primary in Vercel); Search Console, Rich Results and PageSpeed checks
+   after deploy; keyboard-only pass not done. **Phase B (`/software/:slug`) deliberately not
+   started** (the plan gates it on Phase A being live; it also needs a route that does not
+   clash with the signed-in `/software/:id`).
 
 The Vercel project `release-update-backend` was deleted by the owner; stale references
 are listed in Batch 1 Task 8. Whether the `web` Vercel project is still deployed has

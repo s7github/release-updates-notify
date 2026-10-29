@@ -10,7 +10,12 @@ import {
 import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
 import firebaseConfig from "@/firebase-applet-config.json";
 
-const app = initializeApp(firebaseConfig);
+// authDomain is releasescope.com in production: Vercel proxies /__/auth/* to Firebase's
+// handler (web/vercel.json), so Google's consent screen never shows the project id.
+// The proxy does not exist on the dev server, so local runs override it with
+// VITE_AUTH_DOMAIN (see .env.example).
+const authDomain = (import.meta.env.VITE_AUTH_DOMAIN as string | undefined)?.trim() || firebaseConfig.authDomain;
+const app = initializeApp({ ...firebaseConfig, authDomain });
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
