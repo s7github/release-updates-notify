@@ -10,8 +10,10 @@ import {
 import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
 import firebaseConfig from "@/firebase-applet-config.json";
 
-// authDomain is releasescope.com in production: Vercel proxies /__/auth/* to Firebase's
-// handler (web/vercel.json), so Google's consent screen never shows the project id.
+// authDomain is www.releasescope.com in production: Vercel proxies /__/auth/* to Firebase's
+// handler (web/vercel.json), so Google's consent screen never shows the project id. It must
+// be the host that serves the app (the apex 308-redirects to www); an authDomain that
+// redirects breaks the popup handshake and surfaces as "Sign-in cancelled".
 // The proxy does not exist on the dev server, so local runs override it with
 // VITE_AUTH_DOMAIN (see .env.example).
 const authDomain = (import.meta.env.VITE_AUTH_DOMAIN as string | undefined)?.trim() || firebaseConfig.authDomain;
