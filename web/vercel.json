@@ -1,9 +1,42 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/proxy.ts": { "maxDuration": 30 }
+    "api/proxy.ts": {
+      "maxDuration": 30
+    }
   },
   "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/__/auth/:path*",
+      "destination": "https://gen-lang-client-0099813375.firebaseapp.com/__/auth/:path*"
+    },
+    {
+      "source": "/__/firebase/init.json",
+      "destination": "https://gen-lang-client-0099813375.firebaseapp.com/__/firebase/init.json"
+    },
+    {
+      "source": "/((?!api/|__/|assets/).*)",
+      "destination": "/app.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)\\.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    }
   ]
 }

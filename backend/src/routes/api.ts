@@ -8,6 +8,7 @@ import { captureException } from '../lib/sentry.js';
 import { consumeQuota } from '../lib/rateLimit.js';
 import { geminiBlockedUntil, isQuotaError, recordGeminiBlock } from '../lib/geminiGate.js';
 import { searchFields } from '../lib/searchKey.js';
+import { toIndexEntries, type CatalogIndexEntry } from '../lib/catalogIndex.js';
 import { discoverAll } from '../services/discovery.js';
 import { enqueuePoll } from '../services/pollRequests.js';
 import { createAdminRouter } from './admin.js';
@@ -26,6 +27,27 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 100);
+}
+
+const INDEX_TTL_MS = 6 * 60 * 60 * 1000;
+interface BuiltIndex { builtAt: number; count: number; entries: CatalogIndexEntry[] }
+let indexCache: BuiltIndex | null = null;
+let indexBuild: Promise<BuiltIndex> | null = null;
+
+async function getCatalogIndex(): Promise<BuiltIndex> {
+  if (indexCache && Date.now() - indexCache.builtAt < INDEX_TTL_MS) return indexCache;
+  indexBuild ??= (async () => {
+    const snap = await db()
+      .collection(Collections.MASTER_REGISTRY)
+      .select('name', 'vendor', 'active')
+      .get();
+    const entries = toIndexEntries(
+      snap.docs.map((d) => ({ id: d.id, name: d.get('name'), vendor: d.get('vendor'), active: d.get('active') })),
+    );
+    indexCache = { builtAt: Date.now(), count: entries.length, entries };
+    return indexCache;
+  })().finally(() => { indexBuild = null; });
+  return indexBuild;
 }
 
 async function tierFor(uid: string) {
@@ -70,6 +92,25 @@ export function createApiApp(): Express {
     } catch (error) {
       log.error('pipeline health read failed', error);
       res.status(503).json({ status: 'unknown' });
+    }
+  });
+
+  /**
+   * Public catalog index for the browser's local search (ADR-0021). Names only,
+   * no user data. Rebuilt at most once per instance per six hours, so a cold
+   * build is the only time it costs ~15k document reads; the CDN and browser
+   * caches absorb the rest.
+   */
+  app.get('/v1/catalog-index.json', async (_req, res) => {
+    try {
+      const index = await getCatalogIndex();
+      res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+      res.json(index);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      captureException(err, { route: 'catalog-index' });
+      log.error('catalog_index_failed', err);
+      res.status(502).json({ error: 'Catalog index unavailable' });
     }
   });
 

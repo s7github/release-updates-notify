@@ -12,6 +12,7 @@ import { limitsFor, tierLabel } from "../services/entitlements";
 import { userApi, ApiError } from "../services/api";
 import { searchCatalog } from "../services/catalogSearch";
 import { followSoftware } from "../services/followSoftware";
+import SoftwareSearch from "../components/Library/SoftwareSearch";
 import toast from "react-hot-toast";
 import { motion } from "motion/react";
 
@@ -178,36 +179,13 @@ export default function AddSoftware() {
         </Alert>
       )}
 
-      <Paper 
-        sx={{ 
-          p: 1, 
-          display: 'flex', 
-          borderRadius: 4, 
-          border: '2px solid rgba(242, 125, 38, 0.2)',
-          mb: 4
-        }}
-      >
-        <TextField
-          fullWidth
-          variant="standard"
-          placeholder="Search e.g. VS Code, Antigravity, Figma..."
-          autoFocus
-          value={val}
-          onChange={(e) => setVal(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSearch(val)}
-          sx={{ ml: 2, my: 1 }}
-          slotProps={{ input: { disableUnderline: true } }}
-        />
-        <Button 
-          variant="contained" 
-          onClick={() => handleSearch(val)}
-          disabled={isSearching || !val.trim()}
-          startIcon={isSearching ? <CircularProgress size={16} color="inherit" /> : <SearchIcon size={18} />}
-          sx={{ borderRadius: 3, px: 4 }}
-        >
-          Search
-        </Button>
-      </Paper>
+      <SoftwareSearch
+        value={val}
+        onChange={setVal}
+        searching={isSearching}
+        onSubmitText={handleSearch}
+        onFollow={(entry) => addToLibrary({ id: entry.id, name: entry.name, vendor: entry.vendor ?? null, type: "software" })}
+      />
 
       <Grid container spacing={2}>
         {searchResults.map((item) => (

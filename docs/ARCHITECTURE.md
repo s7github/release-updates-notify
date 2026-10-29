@@ -170,6 +170,12 @@ screen. Porting a `DataGrid` to a phone would be effort spent making something
 worse. The Android app is the consumer surface; the web app is the operator
 surface.
 
+Since [ADR-0022](adr/0022-public-marketing-and-catalog-pages.md) the same app also
+serves pre-rendered public pages (`/`, `/demo`, `/how-it-works`, `/pricing`,
+`/privacy`, `/terms`) and `sitemap.xml`; signed-in routes stay client-rendered.
+Add-software search matches locally against `GET /v1/catalog-index.json` served by
+`api` ([ADR-0021](adr/0021-client-side-catalog-index.md)).
+
 ---
 
 ## 4. The polling pipeline in detail
